@@ -49,6 +49,7 @@ unsafe fn text(ptr: *const c_char) -> Option<String> {
 /// Runs the app. Call once, from `main`, on the main thread; returns only if the loop could not start.
 #[unsafe(no_mangle)]
 pub extern "C" fn hz_run() -> i32 {
+    install_panic_note();
     let hooks = horizon_client::ios::Hooks {
         show_launcher,
         game_started,
@@ -172,4 +173,27 @@ pub extern "C" fn hz_pointer_button(button: u8, pressed: bool) {
 #[unsafe(no_mangle)]
 pub extern "C" fn hz_pointer_wheel(lines: f32) {
     horizon_client::ios::pointer_wheel(lines);
+}
+
+/// Before anything else hooks panics: write the message, the thread and a backtrace to
+/// Documents/logs/panic.txt and the log, flushed, then go on to the next hook (the game's crash
+/// report and the default message). A panic on iOS often ends the process before buffered
+/// lines reach the log.
+fn install_panic_note() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current().name().unwrap_or("unnamed").to_owned();
+        let text = format!(
+            "panic on thread {thread}: {info}\n\n{}",
+            std::backtrace::Backtrace::force_capture()
+        );
+        if let Some(home) = std::env::var_os("HOME") {
+            let dir = std::path::Path::new(&home).join("Documents/logs");
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(dir.join("panic.txt"), &text);
+        }
+        log::error!("Horizon iOS: {text}");
+        horizon_client::logging::flush();
+        previous(info);
+    }));
 }
