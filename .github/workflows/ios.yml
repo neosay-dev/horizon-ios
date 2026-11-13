@@ -1,10 +1,19 @@
 # The iOS app: the Rust game as a static library, the Swift launcher, an unsigned IPA to sideload.
-# Manual only (Actions → iOS → Run workflow). Optional repository variable HZ_MSA_CLIENT_ID:
+# Runs on iOS port changes, or manually (Actions → iOS → Run workflow). Optional HZ_MSA_CLIENT_ID:
 # your own Azure app's client ID, approved by Mojang (ios/README.md).
 name: iOS
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ios-port]
+    paths:
+      - .github/workflows/ios.yml
+      - .cargo/**
+      - Cargo.toml
+      - Cargo.lock
+      - crates/**
+      - ios/**
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -14,6 +23,10 @@ jobs:
   ipa:
     runs-on: macos-26
     timeout-minutes: 120
+    defaults:
+      run:
+        # Explicit bash enables pipefail, so tee/tail cannot hide build failures.
+        shell: bash
     env:
       IPHONEOS_DEPLOYMENT_TARGET: "17.0"
       CARGO_TERM_COLOR: always
@@ -36,9 +49,10 @@ jobs:
         with:
           key: ios
           cache-targets: true
+          cache-on-failure: true
 
       - name: Game library (crates/horizon-ios)
-        run: cargo build --release -p horizon-ios --target aarch64-apple-ios
+        run: cargo build --release -p horizon-ios --target aarch64-apple-ios 2>&1 | tee rust-ios-build.log
 
       - name: Xcode project
         run: |
@@ -52,7 +66,17 @@ jobs:
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             HZ_MSA_CLIENT_ID="${{ vars.HZ_MSA_CLIENT_ID }}" \
-            build | tail -n 200
+            build 2>&1 | tee ../xcode-ios-build.log | tail -n 200
+
+      - name: Build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Horizon-ios-build-logs-${{ github.run_number }}
+          path: |
+            rust-ios-build.log
+            xcode-ios-build.log
+          if-no-files-found: ignore
 
       - name: IPA
         run: |
