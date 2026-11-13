@@ -20,6 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Local account tests
+        run: |
+          test_dir=$(mktemp -d)
+          swiftc ios/Horizon/Account/LocalAccount.swift ios/Tests/LocalAccountTests.swift -o "$test_dir/local-account-tests"
+          "$test_dir/local-account-tests"
+
       - name: Rust for iOS
         run: |
           rustup toolchain install stable --profile minimal

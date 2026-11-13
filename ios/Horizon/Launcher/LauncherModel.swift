@@ -57,8 +57,7 @@ final class LauncherModel: ObservableObject {
     }
 
     var canPlay: Bool {
-        if case .signedIn = account.state { return resourcesReady }
-        return false
+        account.hasAccount && resourcesReady
     }
 
     /// Copies a prepared resources folder (`.local/horizon-client/26.3`) picked in Files.
@@ -97,23 +96,21 @@ final class LauncherModel: ObservableObject {
         }
     }
 
-    /// Play: a fresh session from the account (the owner gate), then the game's command line.
+    /// Play with a local name or a fresh Microsoft session.
     func play(world: String?) {
         status = nil
         settings.save()
         controls.save()
         Task {
             do {
-                let session = try await account.sessionForPlay()
-                let file = try AccountStore.writeSessionFile(session)
+                let accountArgs = try await account.launchArguments()
                 var args = [
                     "--game-dir", Paths.gameDir.path,
                     "--home", Paths.home.path,
                     "--resources", Paths.resources.path,
                     "--render-distance", String(Int(settings.renderDistance)),
-                    "--session-file", file.path,
                     "--fullscreen",
-                ]
+                ] + accountArgs
                 if let world, !world.isEmpty {
                     args += ["--quickPlaySingleplayer", world]
                     settings.lastWorld = world

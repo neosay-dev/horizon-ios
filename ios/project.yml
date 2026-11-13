@@ -9,7 +9,7 @@ settings:
     SWIFT_VERSION: "5.0"
     # The Rust library (crates/horizon-ios), built first by build-rust.sh.
     RUST_LIB_DIR: $(SRCROOT)/../target/aarch64-apple-ios/release
-    # Your own Azure app's client ID, approved by Mojang (README). Empty: no sign-in, no Play.
+    # Your own Azure app's client ID, approved by Mojang (README). Empty: local accounts only.
     HZ_MSA_CLIENT_ID: ""
 targets:
   Horizon:

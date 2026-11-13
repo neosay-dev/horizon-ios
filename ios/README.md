@@ -7,8 +7,8 @@ SwiftUI launcher in Liquid Glass (iOS 26; a material fallback from iOS 17) and t
 
 - `main.swift` calls `hz_run()` (Rust). winit starts `UIApplicationMain` and calls back
   `hz_swift_show_launcher`, and Swift shows the launcher window.
-- **Play** gets a fresh Microsoft session (the owner gate), writes `--session-file`, and calls
-  `hz_play([...args])`. The game starts inside the same event loop (`horizon_client::ios`): on iOS
+- **Play** passes `--name` for a local profile, or gets a fresh Microsoft session and writes
+  `--session-file` for Microsoft sign-in, then calls `hz_play([...args])`. The game starts inside the same event loop (`horizon_client::ios`): on iOS
   the game's handler is handed to the app's loop instead of opening a loop of its own.
 - **Touch controls** are a pass-through window above the game's window. They send control-socket
   lines (`key w down`, `mouse left click`, `turn 2.5 -1`, `hotbar 3`) through `hz_input`, and the
@@ -37,11 +37,19 @@ The game needs the resources `horizon-prepare` builds from **your own** copy of 
 (`.local/horizon-client/26.3`). Import that folder in the launcher (Files), or copy it to
 `Documents/resources/26.3` with Finder (file sharing is on). Never commit or share it.
 
+## Local account
+
+Enter a nickname and tap **Войти локально**. Names use 3–16 ASCII letters, digits or underscores;
+spaces around the name are trimmed. The profile stays on this device between app launches until
+**Выйти** is tapped. No Microsoft client ID or network request is needed for local sign-in.
+Prepared resources are still required. Local profiles work in single player and on servers with
+online authentication disabled; Microsoft-authenticated servers still need Microsoft sign-in.
+In multiplayer, the game derives the offline UUID from the name, so changing it changes the player identity.
+
 ## Microsoft sign-in
 
-Play needs a Microsoft account that owns Minecraft: Java Edition. There are no offline accounts,
-as in Horizon's own launcher (docs/microsoft-account.md). A port may not use Horizon's client ID
-(docs/forking.md). Register your own:
+Microsoft sign-in remains available for accounts that own Minecraft: Java Edition.
+A port may not use Horizon's client ID (docs/forking.md). Register your own:
 
 1. Azure portal → App registrations → New: personal Microsoft accounts only, *Allow public client
    flows: Yes*.

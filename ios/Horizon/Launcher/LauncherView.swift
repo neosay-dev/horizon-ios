@@ -8,6 +8,7 @@ struct LauncherView: View {
     @EnvironmentObject var controls: ControlLayout
 
     @State private var showSignIn = false
+    @State private var localName = ""
     @State private var showSettings = false
     @State private var showControls = false
     @State private var picking = false
@@ -73,25 +74,46 @@ struct LauncherView: View {
     private var accountCard: some View {
         Card(title: "Аккаунт", symbol: "person.crop.circle.fill") {
             switch account.state {
-            case .signedIn(let name):
+            case .signedIn(let name), .local(let name):
                 HStack {
                     Text(name).font(.title3.bold())
                     Spacer()
                     Button("Выйти", role: .destructive) { account.signOut() }.glassButton()
                 }
-                Text("Microsoft · Java Edition куплена").font(.footnote).foregroundStyle(.secondary)
+                if case .local = account.state {
+                    Text("Локальный аккаунт").font(.footnote).foregroundStyle(.secondary)
+                    Text("Одиночная игра и серверы без проверки Microsoft-аккаунта.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Text("Microsoft · Java Edition куплена").font(.footnote).foregroundStyle(.secondary)
+                }
             case .working:
                 ProgressView().frame(maxWidth: .infinity)
             default:
-                Text("Войди через Microsoft-аккаунт, на котором куплен Minecraft: Java Edition.")
+                TextField("Ник игрока", text: $localName)
+                    .textContentType(.username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.go)
+                    .onSubmit { account.signInLocally(name: localName) }
+                    .padding(12)
+                    .glassCard(cornerRadius: 12)
+                Text("3–16 символов: A–Z, a–z, 0–9 и _.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button { account.signInLocally(name: localName) } label: {
+                    Label("Войти локально", systemImage: "person.fill").frame(maxWidth: .infinity)
+                }
+                .glassButton(prominent: true)
+                Divider()
+                Text("Или войди через Microsoft-аккаунт, на котором куплен Minecraft: Java Edition.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button { showSignIn = true; account.startSignIn() } label: {
                     Label("Войти через Microsoft", systemImage: "key.fill").frame(maxWidth: .infinity)
                 }
-                .glassButton(prominent: true)
+                .glassButton()
                 .disabled(!account.configured)
                 if !account.configured {
-                    Text("В сборке нет HZMSAClientID (см. ios/README.md).").font(.footnote).foregroundStyle(.orange)
+                    Text("Вход Microsoft недоступен в этой сборке. Можно войти локально.").font(.footnote).foregroundStyle(.orange)
                 }
             }
             if let e = account.error {
@@ -170,7 +192,7 @@ struct LauncherView: View {
     }
 
     private var hint: LocalizedStringKey {
-        if case .signedIn = account.state {
+        if account.hasAccount {
             return "Импортируй ресурсы, чтобы играть."
         }
         return "Войди в аккаунт, чтобы играть."
@@ -218,7 +240,7 @@ struct SignInView: View {
                     }
                     .glassButton(prominent: true)
                     ProgressView("Ждём подтверждения…")
-                case .signedIn(let name):
+                case .signedIn(let name), .local(let name):
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 56)).foregroundStyle(.green)
                     Text("Вход выполнен: \(name)").font(.title3.bold())
                     Button("Готово") { dismiss() }.glassButton(prominent: true)
