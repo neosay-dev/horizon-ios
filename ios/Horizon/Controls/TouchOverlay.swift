@@ -1,17 +1,21 @@
 import SwiftUI
 import UIKit
 
-/// The touch controls over the game's window. They show only while the player is in the world
-/// with no screen open (`hz_playing`); elsewhere every touch goes through to the game, where a
-/// finger is the pointer (menus, inventory, chests).
+/// Over the game's window, two modes:
+/// - in the world with no screen open (`hz_playing`): the touch controls; a drag turns the view
+///   and does nothing else, actions are buttons (LMB breaks and attacks, RMB uses and places);
+/// - on every screen (menus, inventory, chests): the virtual mouse, a cursor moved like a
+///   trackpad, with LMB, RMB, Back and the wheel as buttons. A tap clicks at the cursor.
+/// No finger reaches the game itself (horizon_client::ios drops winit's touches).
 @MainActor
 final class TouchControlsController: UIViewController {
     private let layout: ControlLayout
     private let settings: LauncherSettings
     private let look = LookView()
+    private let mouse = VirtualMouseView()
     private var controls: [UIView] = []
     private var link: CADisplayLink?
-    private var shown = false
+    private var playing = false
 
     init(layout: ControlLayout, settings: LauncherSettings) {
         self.layout = layout
@@ -30,11 +34,13 @@ final class TouchControlsController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         look.sensitivity = settings.sensitivity
-        look.frame = view.bounds
-        look.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(look)
+        for v in [look, mouse] as [UIView] {
+            v.frame = view.bounds
+            v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.addSubview(v)
+        }
         rebuild()
-        setShown(false)
+        setPlaying(false)
         link = CADisplayLink(target: self, selector: #selector(tick))
         link?.add(to: .main, forMode: .common)
     }
@@ -49,21 +55,22 @@ final class TouchControlsController: UIViewController {
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .all }
 
     @objc private func tick() {
-        let playing = hz_playing()
-        if playing != shown { setShown(playing) }
+        let now = hz_playing()
+        if now != playing { setPlaying(now) }
     }
 
-    private func setShown(_ on: Bool) {
-        shown = on
-        if !on {
-            // Into a screen: nothing stays held (a lost release keeps the player walking).
-            gameInput("release")
-            for case let b as ControlButtonView in controls { b.reset() }
-            (controls.first { $0 is JoystickView } as? JoystickView)?.reset()
-            look.reset()
-        }
+    private func setPlaying(_ on: Bool) {
+        playing = on
+        // Between the world and a screen nothing stays held (a lost release keeps the player walking).
+        gameInput("release")
+        for case let b as ControlButtonView in controls { b.reset() }
+        (controls.first { $0 is JoystickView } as? JoystickView)?.reset()
+        look.reset()
+        mouse.reset()
+        if !on { mouse.centre() }
         UIView.animate(withDuration: 0.15) { self.applyAlpha() }
         for v in controls + [look] { v.isUserInteractionEnabled = on }
+        mouse.isUserInteractionEnabled = !on
     }
 
     func rebuild() {
@@ -79,8 +86,8 @@ final class TouchControlsController: UIViewController {
                 b.onEdit = { [weak self] in self?.editLayout() }
                 v = b
             }
-            v.isUserInteractionEnabled = shown
-            view.addSubview(v)
+            v.isUserInteractionEnabled = playing
+            view.insertSubview(v, belowSubview: mouse)
             return v
         }
         place()
@@ -95,14 +102,16 @@ final class TouchControlsController: UIViewController {
             v.bounds = CGRect(x: 0, y: 0, width: w, height: h)
             v.center = CGPoint(x: bounds.width * b.x, y: bounds.height * b.y)
         }
+        mouse.layoutButtons(scale: scale)
         applyAlpha()
     }
 
-    /// Each control's own opacity while shown, none while hidden.
+    /// The world's controls at their own opacity while playing; the mouse on the screens.
     private func applyAlpha() {
-        look.alpha = shown ? 1 : 0
+        look.alpha = playing ? 1 : 0
+        mouse.alpha = playing ? 0 : 1
         for (v, b) in zip(controls, layout.buttons) {
-            v.alpha = shown ? b.opacity * settings.controlOpacity : 0
+            v.alpha = playing ? b.opacity * settings.controlOpacity : 0
         }
     }
 
@@ -137,18 +146,14 @@ final class TouchControlsController: UIViewController {
     }
 }
 
-// MARK: - The view: turn with a drag, tap to use, hold to break
+// MARK: - The view: a drag turns it, nothing else
 
-/// Behind the other controls, over the whole screen: a drag turns the view (`turn`), a quick
-/// tap uses or places (right click), a still hold breaks or attacks (left button held).
+/// Behind the other controls, over the whole screen, in the world: a drag turns the view
+/// (`turn`). Taps and holds do nothing: breaking, attacking, using and placing are buttons.
 final class LookView: UIView {
     var sensitivity: Double = 0.25
     private var finger: UITouch?
     private var last: CGPoint = .zero
-    private var travelled: CGFloat = 0
-    private var started = Date()
-    private var holdTimer: Timer?
-    private var breaking = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -158,25 +163,12 @@ final class LookView: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func reset() {
-        finger = nil
-        holdTimer?.invalidate()
-        breaking = false
-    }
+    func reset() { finger = nil }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard finger == nil, let t = touches.first else { return }
         finger = t
         last = t.location(in: self)
-        travelled = 0
-        started = Date()
-        holdTimer?.invalidate()
-        holdTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
-            guard let self, self.finger != nil, self.travelled < 12 else { return }
-            self.breaking = true
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            gameInput("mouse left down")
-        }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -184,26 +176,259 @@ final class LookView: UIView {
         let p = t.location(in: self)
         let dx = p.x - last.x, dy = p.y - last.y
         last = p
-        travelled += hypot(dx, dy)
         if dx != 0 || dy != 0 {
             gameInput(String(format: "turn %.3f %.3f", dx * sensitivity, dy * sensitivity))
         }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let t = finger, touches.contains(t) else { return }
-        holdTimer?.invalidate()
-        if breaking {
-            gameInput("mouse left up")
-        } else if travelled < 12 && Date().timeIntervalSince(started) < 0.3 {
-            gameInput("mouse right click")
+        if let t = finger, touches.contains(t) { reset() }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { reset() }
+}
+
+// MARK: - Virtual mouse
+
+/// The screens' mouse: a drag anywhere moves the cursor (like a trackpad), a tap clicks at it,
+/// two fingers up or down scroll. LMB and RMB can be held while another finger drags (moving
+/// stacks in the inventory).
+final class VirtualMouseView: UIView {
+    private let cursor = UIImageView()
+    private var position = CGPoint(x: 200, y: 200)
+    private var finger: UITouch?
+    private var last: CGPoint = .zero
+    private var travelled: CGFloat = 0
+    private var started = Date()
+    private var scrollFrom: CGFloat?
+    private var buttons: [MouseButtonView] = []
+    var speed: CGFloat = 1.4
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isMultipleTouchEnabled = true
+        let config = UIImage.SymbolConfiguration(pointSize: 26, weight: .bold)
+        cursor.image = UIImage(systemName: "cursorarrow", withConfiguration: config)
+        cursor.tintColor = .white
+        cursor.layer.shadowColor = UIColor.black.cgColor
+        cursor.layer.shadowOpacity = 0.8
+        cursor.layer.shadowRadius = 2
+        cursor.layer.shadowOffset = .zero
+        cursor.sizeToFit()
+        cursor.isUserInteractionEnabled = false
+        addSubview(cursor)
+        let specs: [(String, String, MouseButtonView.Kind)] = [
+            ("ЛКМ", "computermouse.fill", .button(0)),
+            ("ПКМ", "computermouse", .button(1)),
+            ("Назад", "arrow.uturn.backward", .key("esc")),
+            ("Вверх", "chevron.up", .wheel(1)),
+            ("Вниз", "chevron.down", .wheel(-1)),
+        ]
+        buttons = specs.map { MouseButtonView(title: $0.0, symbol: $0.1, kind: $0.2) }
+        buttons.forEach(addSubview)
+        bringSubviewToFront(cursor)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func layoutButtons(scale: Double) {
+        let s = 64 * scale
+        let b = bounds
+        let frames: [CGPoint] = [
+            CGPoint(x: b.width - s * 0.9, y: b.height - s * 1.0),   // LMB
+            CGPoint(x: b.width - s * 0.9, y: b.height - s * 2.2),   // RMB
+            CGPoint(x: s * 0.9, y: s * 0.9),                        // Back
+            CGPoint(x: s * 0.9, y: b.height - s * 2.2),             // wheel up
+            CGPoint(x: s * 0.9, y: b.height - s * 1.0),             // wheel down
+        ]
+        for (button, centre) in zip(buttons, frames) {
+            button.bounds = CGRect(x: 0, y: 0, width: s, height: s)
+            button.center = centre
         }
-        reset()
+        clamp()
+    }
+
+    func reset() {
+        finger = nil
+        scrollFrom = nil
+        buttons.forEach { $0.release() }
+    }
+
+    func centre() {
+        position = CGPoint(x: bounds.midX, y: bounds.midY)
+        clamp()
+        send()
+    }
+
+    /// The game's view: winit's window, below this one.
+    private func gameView() -> UIView? {
+        let windows = window?.windowScene?.windows ?? []
+        return windows.first { !($0 is PassthroughWindow) && !$0.isHidden && $0.windowLevel == .normal }?
+            .rootViewController?.view
+    }
+
+    private func clamp() {
+        var area = bounds
+        if let game = gameView() { area = game.convert(game.bounds, to: self) }
+        position.x = min(max(position.x, area.minX), area.maxX - 1)
+        position.y = min(max(position.y, area.minY), area.maxY - 1)
+        cursor.frame.origin = CGPoint(x: position.x - 4, y: position.y - 3)
+    }
+
+    /// The cursor to the game, in its view's pixels.
+    private func send() {
+        guard let game = gameView() else {
+            // No game view found: the screen's pixels, which it fills on most devices.
+            let scale = window?.screen.nativeScale ?? 2
+            hz_pointer_move(Double(position.x * scale), Double(position.y * scale))
+            return
+        }
+        let p = game.convert(position, from: self)
+        let scale = game.contentScaleFactor
+        hz_pointer_move(Double(p.x * scale), Double(p.y * scale))
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        let active = event?.allTouches?.filter { $0.view === self && $0.phase != .ended && $0.phase != .cancelled } ?? []
+        if active.count >= 2 {
+            // Two fingers: scroll.
+            finger = nil
+            scrollFrom = active.map { $0.location(in: self).y }.reduce(0, +) / CGFloat(active.count)
+            return
+        }
+        guard finger == nil, let t = touches.first else { return }
+        finger = t
+        last = t.location(in: self)
+        travelled = 0
+        started = Date()
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let from = scrollFrom {
+            let active = event?.allTouches?.filter { $0.view === self } ?? []
+            guard !active.isEmpty else { return }
+            let y = active.map { $0.location(in: self).y }.reduce(0, +) / CGFloat(active.count)
+            if abs(y - from) > 24 {
+                hz_pointer_wheel(y > from ? 1 : -1)
+                scrollFrom = y
+            }
+            return
+        }
+        guard let t = finger, touches.contains(t) else { return }
+        let p = t.location(in: self)
+        let dx = p.x - last.x, dy = p.y - last.y
+        last = p
+        travelled += hypot(dx, dy)
+        position.x += dx * speed
+        position.y += dy * speed
+        clamp()
+        send()
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if scrollFrom != nil {
+            let left = event?.allTouches?.filter { $0.view === self && $0.phase != .ended && $0.phase != .cancelled } ?? []
+            if left.isEmpty { scrollFrom = nil }
+            return
+        }
+        guard let t = finger, touches.contains(t) else { return }
+        finger = nil
+        // A tap clicks where the cursor is.
+        if travelled < 10 && Date().timeIntervalSince(started) < 0.3 {
+            send()
+            hz_pointer_button(0, true)
+            hz_pointer_button(0, false)
+        }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if breaking { gameInput("mouse left up") }
-        reset()
+        finger = nil
+        scrollFrom = nil
+    }
+}
+
+/// A virtual mouse button on glass: held while the finger is down.
+final class MouseButtonView: UIView {
+    enum Kind {
+        case button(UInt8)
+        case key(String)
+        case wheel(Float)
+    }
+
+    private let kind: Kind
+    private var down = false
+
+    init(title: String, symbol: String, kind: Kind) {
+        self.kind = kind
+        super.init(frame: .zero)
+        clipsToBounds = true
+        layer.borderColor = UIColor.white.withAlphaComponent(0.5).cgColor
+        layer.borderWidth = 1
+        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        blur.isUserInteractionEnabled = false
+        blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(blur)
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 2
+        stack.isUserInteractionEnabled = false
+        let icon = UIImageView(image: UIImage(systemName: symbol))
+        icon.tintColor = .white
+        let label = UILabel()
+        label.text = String(localized: String.LocalizationValue(title))
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 11, weight: .bold)
+        stack.addArrangedSubview(icon)
+        stack.addArrangedSubview(label)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerRadius = bounds.width / 2
+        subviews.first?.frame = bounds
+    }
+
+    private func highlight(_ on: Bool) {
+        backgroundColor = on ? UIColor.white.withAlphaComponent(0.35) : .clear
+        transform = on ? CGAffineTransform(scaleX: 0.92, y: 0.92) : .identity
+    }
+
+    func release() {
+        if down, case .button(let b) = kind { hz_pointer_button(b, false) }
+        down = false
+        highlight(false)
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        highlight(true)
+        switch kind {
+        case .button(let b):
+            down = true
+            hz_pointer_button(b, true)
+        case .key(let k):
+            gameInput("key \(k) tap")
+        case .wheel(let lines):
+            hz_pointer_wheel(lines)
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        release()
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        release()
     }
 }
 

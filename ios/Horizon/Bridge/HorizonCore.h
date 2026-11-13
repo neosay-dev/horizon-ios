@@ -12,3 +12,8 @@ void hz_input(const char *line);
 bool hz_playing(void);
 /// Why the last Play stopped before the game opened, or NULL. Valid until the next call.
 const char *hz_last_error(void);
+/// The virtual mouse: cursor position in pixels of the game view, buttons (0 left, 1 right,
+/// 2 middle) and the wheel in lines.
+void hz_pointer_move(double x, double y);
+void hz_pointer_button(unsigned char button, bool pressed);
+void hz_pointer_wheel(float lines);

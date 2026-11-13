@@ -120,3 +120,21 @@ pub extern "C" fn hz_last_error() -> *const c_char {
         .map(|e| CString::new(e.replace('\0', " ")).unwrap_or_default());
     kept.as_ref().map_or(std::ptr::null(), |c| c.as_ptr())
 }
+
+/// The virtual mouse: the cursor at (x, y), in pixels from the game view's top left.
+#[unsafe(no_mangle)]
+pub extern "C" fn hz_pointer_move(x: f64, y: f64) {
+    horizon_client::ios::pointer_move(x, y);
+}
+
+/// The virtual mouse's button: 0 left, 1 right, 2 middle.
+#[unsafe(no_mangle)]
+pub extern "C" fn hz_pointer_button(button: u8, pressed: bool) {
+    horizon_client::ios::pointer_button(button, pressed);
+}
+
+/// The virtual mouse's wheel, in lines (up is positive).
+#[unsafe(no_mangle)]
+pub extern "C" fn hz_pointer_wheel(lines: f32) {
+    horizon_client::ios::pointer_wheel(lines);
+}

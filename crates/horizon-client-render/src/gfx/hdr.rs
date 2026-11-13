@@ -52,6 +52,11 @@ const NAMES: [(Output, &str); 2] = [(Output::Pq, "pq"), (Output::ScRgb, "scrgb")
 /// The HDR output `caps` can present: HDR10 where offered, else scRGB.
 /// `HORIZON_HDR_OUTPUT=pq` or `scrgb` allows only that one.
 pub fn output(caps: &wgpu::SurfaceCapabilities) -> Option<Output> {
+    // iOS: Metal lists the HDR colour spaces on every screen, HDR or not, and the game stopped
+    // right after switching its surface to one. SDR there until HDR is tested on a device.
+    if cfg!(target_os = "ios") {
+        return None;
+    }
     pick(caps, std::env::var("HORIZON_HDR_OUTPUT").ok().as_deref())
 }
 fn pick(caps: &wgpu::SurfaceCapabilities, only: Option<&str>) -> Option<Output> {

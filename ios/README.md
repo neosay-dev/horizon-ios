@@ -13,17 +13,19 @@ SwiftUI launcher in Liquid Glass (iOS 26; a material fallback from iOS 17) and t
 - **Touch controls** are a pass-through window above the game's window. They send control-socket
   lines (`key w down`, `mouse left click`, `turn 2.5 -1`, `hotbar 3`) through `hz_input`, and the
   game runs them each frame as a replay would. They show only while `hz_playing()` (in the world
-  with no screen open). Elsewhere a finger is the pointer: winit's touches become cursor moves and
-  left clicks.
+  with no screen open). Elsewhere the virtual mouse shows instead.
+
+**Menus and inventory: the virtual mouse.** A cursor you move like a trackpad (drag anywhere),
+a tap clicks at it, two fingers scroll; buttons LMB, RMB (hold them while another finger drags
+stacks), Back (Esc) and the wheel. The game's own view never gets a finger.
 
 ## Controls
 
 | Control | Action |
 |---|---|
 | Stick (left) | W A S D; pushed to the rim straight ahead: sprint |
-| Drag anywhere | look around |
-| Tap | use / place (right click) |
-| Hold still | break / attack (left button held) |
+| Drag anywhere | look around (nothing else: actions are buttons) |
+| Attack (LMB) / Use (RMB) | break and attack / use and place |
 | Jump, Attack, Use, Sneak (toggle), Sprint (toggle) | Space, left button, right button, Shift, Ctrl |
 | Inventory, Drop, Chat, Pause, View | E, Q, T + system keyboard, Esc, F5 |
 | Hotbar strip | `hotbar 1-9`; resize it in the editor to sit over the game's |

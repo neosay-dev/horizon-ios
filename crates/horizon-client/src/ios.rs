@@ -9,7 +9,9 @@
 //!
 //! Touch controls reach the game as control-socket lines ([`push_input`]): `key w down`,
 //! `mouse left click`, `turn 3.5 -1.0`. The game drains them once a frame
-//! (`Game::poll_control`) through the same path a replay takes.
+//! (`Game::poll_control`) through the same path a replay takes. Over the screens a virtual
+//! mouse (a cursor Swift draws, moved like a trackpad) sends window events
+//! ([`pointer_move`], [`pointer_button`], [`pointer_wheel`]).
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -108,6 +110,7 @@ pub fn run(hooks: Hooks) -> Result<(), winit::error::EventLoopError> {
         hooks,
         game: None,
         shown: false,
+        window: None,
     };
     event_loop.run_app(&mut root)
 }
@@ -116,6 +119,8 @@ struct Root {
     hooks: Hooks,
     game: Option<Box<dyn ApplicationHandler>>,
     shown: bool,
+    /// The game's window, which the virtual mouse's events go to.
+    window: Option<WindowId>,
 }
 
 impl Root {
@@ -158,6 +163,12 @@ impl ApplicationHandler for Root {
         self.start(event_loop);
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        self.window = Some(id);
+        // Fingers never reach the game: the Swift overlay turns them into keys, the view's
+        // turns and the virtual mouse.
+        if matches!(event, WindowEvent::Touch(_)) {
+            return;
+        }
         if let Some(g) = &mut self.game {
             g.window_event(event_loop, id, event);
         }
@@ -173,6 +184,11 @@ impl ApplicationHandler for Root {
             self.start(event_loop);
         }
         if let Some(g) = &mut self.game {
+            if let Some(id) = self.window {
+                for event in pointer_events() {
+                    g.window_event(event_loop, id, event);
+                }
+            }
             g.about_to_wait(event_loop);
         }
     }
@@ -193,47 +209,61 @@ impl ApplicationHandler for Root {
     }
 }
 
-thread_local! {
-    static POINTER: RefCell<TouchPointer> = RefCell::new(TouchPointer::default());
+/// The virtual mouse's events (Swift's cursor over the screens), in the game view's pixels.
+enum Pointer {
+    Move(f64, f64),
+    Button(winit::event::MouseButton, bool),
+    Wheel(f32),
 }
 
-/// The mouse events a touch on the game's view stands for (see [`TouchPointer`]).
-pub fn touch_as_mouse(touch: &winit::event::Touch) -> Vec<WindowEvent> {
-    POINTER.with(|p| p.borrow_mut().events(touch))
+static POINTER: Mutex<Vec<Pointer>> = Mutex::new(Vec::new());
+
+/// The virtual cursor moved to (x, y), in pixels from the game view's top left.
+pub fn pointer_move(x: f64, y: f64) {
+    lock(&POINTER).push(Pointer::Move(x, y));
 }
 
-/// Touches as the pointer, for the screens (menus, inventory): the first finger moves the cursor
-/// and presses the left button. In the world the Swift overlay takes the touches itself.
-#[derive(Default)]
-pub struct TouchPointer {
-    finger: Option<u64>,
+/// A virtual mouse button: 0 left, 1 right, 2 middle.
+pub fn pointer_button(button: u8, pressed: bool) {
+    use winit::event::MouseButton;
+    let button = match button {
+        1 => MouseButton::Right,
+        2 => MouseButton::Middle,
+        _ => MouseButton::Left,
+    };
+    lock(&POINTER).push(Pointer::Button(button, pressed));
 }
 
-impl TouchPointer {
-    /// The mouse events one touch event stands for.
-    pub fn events(&mut self, touch: &winit::event::Touch) -> Vec<WindowEvent> {
-        use winit::event::{ElementState, MouseButton, TouchPhase};
-        let device_id = DeviceId::dummy();
-        let moved = WindowEvent::CursorMoved {
-            device_id,
-            position: touch.location,
-        };
-        let button = |state| WindowEvent::MouseInput {
-            device_id,
-            state,
-            button: MouseButton::Left,
-        };
-        match touch.phase {
-            TouchPhase::Started if self.finger.is_none() => {
-                self.finger = Some(touch.id);
-                vec![moved, button(ElementState::Pressed)]
-            }
-            TouchPhase::Moved if self.finger == Some(touch.id) => vec![moved],
-            TouchPhase::Ended | TouchPhase::Cancelled if self.finger == Some(touch.id) => {
-                self.finger = None;
-                vec![moved, button(ElementState::Released)]
-            }
-            _ => Vec::new(),
-        }
-    }
+/// The virtual wheel, in lines (up is positive).
+pub fn pointer_wheel(lines: f32) {
+    lock(&POINTER).push(Pointer::Wheel(lines));
+}
+
+/// The virtual mouse's events since the last turn, as the window events a mouse would send.
+fn pointer_events() -> Vec<WindowEvent> {
+    use winit::event::{ElementState, MouseScrollDelta, TouchPhase};
+    let device_id = DeviceId::dummy();
+    std::mem::take(&mut *lock(&POINTER))
+        .into_iter()
+        .map(|p| match p {
+            Pointer::Move(x, y) => WindowEvent::CursorMoved {
+                device_id,
+                position: winit::dpi::PhysicalPosition::new(x, y),
+            },
+            Pointer::Button(button, pressed) => WindowEvent::MouseInput {
+                device_id,
+                state: if pressed {
+                    ElementState::Pressed
+                } else {
+                    ElementState::Released
+                },
+                button,
+            },
+            Pointer::Wheel(lines) => WindowEvent::MouseWheel {
+                device_id,
+                delta: MouseScrollDelta::LineDelta(0.0, lines),
+                phase: TouchPhase::Moved,
+            },
+        })
+        .collect()
 }
