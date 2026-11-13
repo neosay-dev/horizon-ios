@@ -80,6 +80,13 @@ pub unsafe extern "C" fn hz_play(args_json: *const c_char) -> bool {
     let Ok(args) = serde_json::from_str::<Vec<String>>(&json) else {
         return false;
     };
+    // The start's steps, written as each ends: the last one in the file is where a start that
+    // vanished got to (Documents/logs/startup-trace.json).
+    if let Some(home) = args.iter().skip_while(|a| *a != "--home").nth(1) {
+        let _ = std::fs::create_dir_all(home);
+        // Safety: before the game starts its threads; only this thread runs Rust yet.
+        unsafe { std::env::set_var("HORIZON_STARTUP_TRACE", std::path::Path::new(home).join("startup-trace.json")) };
+    }
     if let Some(dir) = args
         .iter()
         .skip_while(|a| *a != "--game-dir")

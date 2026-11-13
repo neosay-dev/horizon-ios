@@ -564,6 +564,14 @@ pub mod startup {
     #[inline]
     pub fn step(name: &'static str) -> Option<Step> {
         let traced = on();
+        // iOS: also where each step begins, so a start the system ended shows the step it was in.
+        #[cfg(target_os = "ios")]
+        if traced {
+            write(format_args!(
+                r#""ph":"i","s":"t","name":"{name} begins","ts":{}"#,
+                micros(Instant::now())
+            ));
+        }
         (traced || horizon_threads::HEAP_CENSUS).then(|| Step {
             name,
             started: Instant::now(),
