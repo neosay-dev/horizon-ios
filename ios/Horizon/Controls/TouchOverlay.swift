@@ -98,7 +98,7 @@ final class TouchControlsController: UIViewController {
         let scale = settings.controlScale
         for (v, b) in zip(controls, layout.buttons) {
             let w = b.size * scale
-            let h = b.action == .hotbar ? w / 9 : w
+            let h = b.action == .hotbar ? w / 9 : w * b.aspect
             v.bounds = CGRect(x: 0, y: 0, width: w, height: h)
             v.center = CGPoint(x: bounds.width * b.x, y: bounds.height * b.y)
         }
@@ -208,13 +208,7 @@ final class VirtualMouseView: UIView {
         super.init(frame: frame)
         backgroundColor = .clear
         isMultipleTouchEnabled = true
-        let config = UIImage.SymbolConfiguration(pointSize: 26, weight: .bold)
-        cursor.image = UIImage(systemName: "cursorarrow", withConfiguration: config)
-        cursor.tintColor = .white
-        cursor.layer.shadowColor = UIColor.black.cgColor
-        cursor.layer.shadowOpacity = 0.8
-        cursor.layer.shadowRadius = 2
-        cursor.layer.shadowOffset = .zero
+        cursor.image = Self.arrow()
         cursor.sizeToFit()
         cursor.isUserInteractionEnabled = false
         addSubview(cursor)
@@ -231,6 +225,25 @@ final class VirtualMouseView: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// The Windows arrow: white with a black outline, tip at the top left.
+    static func arrow(scale: CGFloat = 1.5) -> UIImage {
+        let points: [CGPoint] = [(0, 0), (0, 17), (4, 13), (7, 20), (10, 19), (7, 12), (12, 12)]
+            .map { CGPoint(x: CGFloat($0.0) * scale + 1, y: CGFloat($0.1) * scale + 1) }
+        let size = CGSize(width: 13 * scale + 2, height: 21 * scale + 2)
+        return UIGraphicsImageRenderer(size: size).image { ctx in
+            let path = UIBezierPath()
+            path.move(to: points[0])
+            points.dropFirst().forEach { path.addLine(to: $0) }
+            path.close()
+            path.lineJoinStyle = .miter
+            path.lineWidth = 1.2 * scale
+            UIColor.white.setFill()
+            UIColor.black.setStroke()
+            path.fill()
+            path.stroke()
+        }
+    }
 
     func layoutButtons(scale: Double) {
         let s = 64 * scale
@@ -273,7 +286,8 @@ final class VirtualMouseView: UIView {
         if let game = gameView() { area = game.convert(game.bounds, to: self) }
         position.x = min(max(position.x, area.minX), area.maxX - 1)
         position.y = min(max(position.y, area.minY), area.maxY - 1)
-        cursor.frame.origin = CGPoint(x: position.x - 4, y: position.y - 3)
+        // The arrow's tip is the hot spot, as on Windows.
+        cursor.frame.origin = CGPoint(x: position.x - 1, y: position.y - 1)
     }
 
     /// The cursor to the game, in its view's pixels.
@@ -363,8 +377,10 @@ final class MouseButtonView: UIView {
         self.kind = kind
         super.init(frame: .zero)
         clipsToBounds = true
-        layer.borderColor = UIColor.white.withAlphaComponent(0.5).cgColor
-        layer.borderWidth = 1
+        layer.cornerCurve = .continuous
+        layer.borderColor = UIColor.white.withAlphaComponent(0.55).cgColor
+        layer.borderWidth = 1.5
+        backgroundColor = UIColor.black.withAlphaComponent(0.45)
         let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
         blur.isUserInteractionEnabled = false
         blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -394,12 +410,12 @@ final class MouseButtonView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        layer.cornerRadius = bounds.width / 2
+        layer.cornerRadius = bounds.width * 0.18
         subviews.first?.frame = bounds
     }
 
     private func highlight(_ on: Bool) {
-        backgroundColor = on ? UIColor.white.withAlphaComponent(0.35) : .clear
+        backgroundColor = on ? UIColor.white.withAlphaComponent(0.45) : UIColor.black.withAlphaComponent(0.45)
         transform = on ? CGAffineTransform(scaleX: 0.92, y: 0.92) : .identity
     }
 
@@ -528,63 +544,72 @@ final class JoystickView: UIView {
 
 // MARK: - Buttons
 
+/// A button in the launcher-classic style: a dark translucent rounded square with a thin light
+/// border and a white label (an SF Symbol above it, when set). Held while the finger is down,
+/// or toggled by each tap; a combo presses its keys in order and releases them in reverse.
 final class ControlButtonView: UIView {
     let button: ControlButton
     var onChat: (() -> Void)?
     var onEdit: (() -> Void)?
     private var on = false
-    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
     private let icon = UIImageView()
     private let label = UILabel()
 
     init(button: ControlButton) {
         self.button = button
         super.init(frame: .zero)
-        clipsToBounds = true
-        layer.borderColor = UIColor.white.withAlphaComponent(0.45).cgColor
-        layer.borderWidth = 1
-        blur.isUserInteractionEnabled = false
-        addSubview(blur)
+        backgroundColor = UIColor.black.withAlphaComponent(0.45)
+        layer.borderColor = UIColor.white.withAlphaComponent(0.55).cgColor
+        layer.borderWidth = 1.5
+        layer.cornerCurve = .continuous
         if let symbol = button.symbol, let image = UIImage(systemName: symbol) {
             icon.image = image
             icon.tintColor = .white
             icon.contentMode = .scaleAspectFit
             addSubview(icon)
-        } else {
-            label.text = button.label
-            label.textColor = .white
-            label.font = .systemFont(ofSize: 13, weight: .semibold)
-            label.adjustsFontSizeToFitWidth = true
-            label.textAlignment = .center
-            addSubview(label)
         }
+        label.text = button.label.isEmpty ? nil : button.label
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 13, weight: .bold)
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.5
+        label.textAlignment = .center
+        label.shadowColor = .black
+        label.shadowOffset = CGSize(width: 0, height: 1)
+        addSubview(label)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        layer.cornerRadius = bounds.width / 2
-        blur.frame = bounds
-        icon.frame = bounds.insetBy(dx: bounds.width * 0.28, dy: bounds.height * 0.28)
-        label.frame = bounds.insetBy(dx: 6, dy: 6)
+        layer.cornerRadius = min(bounds.width, bounds.height) * 0.18
+        let inner = bounds.insetBy(dx: 5, dy: 5)
+        if icon.image != nil && label.text != nil {
+            icon.frame = CGRect(x: inner.minX, y: inner.minY, width: inner.width, height: inner.height * 0.55)
+            label.frame = CGRect(x: inner.minX, y: inner.minY + inner.height * 0.58, width: inner.width, height: inner.height * 0.42)
+        } else {
+            icon.frame = inner.insetBy(dx: inner.width * 0.18, dy: inner.height * 0.18)
+            label.frame = inner
+        }
     }
 
     func reset() {
+        if on { send(false) }
         on = false
         highlight(false)
     }
 
     private func highlight(_ down: Bool) {
-        backgroundColor = down ? UIColor.white.withAlphaComponent(0.35) : .clear
-        transform = down ? CGAffineTransform(scaleX: 0.92, y: 0.92) : .identity
+        backgroundColor = down ? UIColor.white.withAlphaComponent(0.45) : UIColor.black.withAlphaComponent(0.45)
+        label.textColor = down ? .black : .white
+        icon.tintColor = down ? .black : .white
     }
 
     private func send(_ down: Bool) {
-        switch button.action {
-        case .key(let k): gameInput("key \(k) \(down ? "down" : "up")")
-        case .mouse(let b): gameInput("mouse \(b) \(down ? "down" : "up")")
-        default: break
+        let parts = button.action.parts
+        for part in down ? parts : parts.reversed() {
+            gameInput(KeyCatalog.line(part, down: down))
         }
     }
 

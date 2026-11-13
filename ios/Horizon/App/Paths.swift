@@ -13,7 +13,7 @@ enum Paths {
     /// Logs and crash reports (`--home`), in Documents so they can be read in the Files app.
     static let home = documents.appendingPathComponent("logs", isDirectory: true)
     /// The touch layout.
-    static let controls = library.appendingPathComponent("Horizon/controls.json")
+    static let controls = library.appendingPathComponent("Horizon/controls-v2.json")
     /// The launcher's settings.
     static let settings = library.appendingPathComponent("Horizon/launcher.json")
 

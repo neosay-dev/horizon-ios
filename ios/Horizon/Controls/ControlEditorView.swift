@@ -91,9 +91,13 @@ struct ControlEditorView: View {
                 Slider(value: button.opacity, in: 0.1...1)
             }
             switch layout.buttons[i].action {
-            case .key, .mouse:
+            case .key, .mouse, .combo:
+                HStack {
+                    Text("Высота")
+                    Slider(value: button.aspect, in: 0.4...1.6)
+                }
                 Toggle("Нажатие переключает (вкл/выкл)", isOn: button.toggle)
-                ActionPicker(action: button.action)
+                ComboEditor(action: button.action)
             default:
                 EmptyView()
             }
@@ -114,7 +118,7 @@ private struct EditableControl: View {
 
     var body: some View {
         let w = button.size * scale
-        let h = button.action == .hotbar ? w / 9 : w
+        let h = button.action == .hotbar ? w / 9 : w * button.aspect
         ZStack {
             if let symbol = button.symbol {
                 Image(systemName: symbol).font(.system(size: min(w, h) * 0.35, weight: .semibold))
@@ -124,7 +128,7 @@ private struct EditableControl: View {
         }
         .foregroundStyle(.white)
         .frame(width: w, height: h)
-        .background(shape.fill(.white.opacity(0.12)))
+        .background(shape.fill(.black.opacity(0.45)))
         .overlay(shape.stroke(selected ? Color.yellow : .white.opacity(0.6), lineWidth: selected ? 3 : 1))
         .opacity(button.opacity)
         .position(x: screen.width * button.x + drag.width, y: screen.height * button.y + drag.height)
@@ -138,24 +142,128 @@ private struct EditableControl: View {
     }
 
     private var shape: AnyShape {
-        button.action == .hotbar ? AnyShape(RoundedRectangle(cornerRadius: 6)) : AnyShape(Circle())
+        button.action == .joystick ? AnyShape(Circle())
+            : AnyShape(RoundedRectangle(cornerRadius: button.action == .hotbar ? 6 : min(button.size, button.size * button.aspect) * scale * 0.18, style: .continuous))
     }
 }
 
-/// What a custom button presses: a key or a mouse button.
-private struct ActionPicker: View {
+/// What a button presses: one key or mouse button, or several together (Ctrl + C, Shift + LMB).
+private struct ComboEditor: View {
     @Binding var action: ControlAction
+    @State private var picking = false
+
+    private var parts: [String] { action.parts }
 
     var body: some View {
-        Picker("Действие", selection: $action) {
-            Text("Левая кнопка мыши (ударить/ломать)").tag(ControlAction.mouse("left"))
-            Text("Правая кнопка мыши (использовать)").tag(ControlAction.mouse("right"))
-            Text("Средняя кнопка мыши (выбрать блок)").tag(ControlAction.mouse("middle"))
-            ForEach(ControlLayout.keyChoices, id: \.0) { key, name in
-                Text(name).tag(ControlAction.key(key))
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Клавиши (зажимаются вместе, по порядку)").font(.subheadline.bold())
+            FlowRow(items: parts) { index, part in
+                HStack(spacing: 4) {
+                    Text(KeyCatalog.label(part)).font(.callout.monospaced().bold())
+                    Button {
+                        var p = parts
+                        p.remove(at: index)
+                        action = p.isEmpty ? .key("space") : .combo(p)
+                    } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(.white.opacity(0.5)))
+            }
+            Button { picking = true } label: { Label("Добавить клавишу", systemImage: "plus") }
+                .glassButton()
+        }
+        .sheet(isPresented: $picking) {
+            KeyPickerSheet { name in
+                let p = parts
+                if !p.contains(name) { action = .combo(p + [name]) }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+/// Every key the game knows, by group, and the mouse buttons.
+private struct KeyPickerSheet: View {
+    var pick: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(KeyCatalog.groups) { group in
+                    let keys = group.keys.filter { search.isEmpty || $0.label.localizedCaseInsensitiveContains(search) }
+                    if !keys.isEmpty {
+                        Section(group.title) {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 8)], spacing: 8) {
+                                ForEach(keys, id: \.name) { key in
+                                    Button {
+                                        pick(key.name)
+                                        dismiss()
+                                    } label: {
+                                        Text(key.label)
+                                            .font(.callout.bold())
+                                            .frame(maxWidth: .infinity, minHeight: 40)
+                                            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(.white.opacity(0.5)))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+            .searchable(text: $search, prompt: "Найти клавишу")
+            .navigationTitle("Клавиша")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
             }
         }
-        .pickerStyle(.menu)
+    }
+}
+
+/// Chips that wrap onto new lines.
+private struct FlowRow<Item: Hashable, Content: View>: View {
+    var items: [Item]
+    @ViewBuilder var content: (Int, Item) -> Content
+
+    var body: some View {
+        WrapLayout(spacing: 6) {
+            ForEach(Array(items.enumerated()), id: \.offset) { pair in content(pair.offset, pair.element) }
+        }
+    }
+}
+
+private struct WrapLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        var x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0
+        for s in subviews {
+            let size = s.sizeThatFits(.unspecified)
+            if x + size.width > width, x > 0 { x = 0; y += row + spacing; row = 0 }
+            x += size.width + spacing
+            row = max(row, size.height)
+        }
+        return CGSize(width: width, height: y + row)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, row: CGFloat = 0
+        for s in subviews {
+            let size = s.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX { x = bounds.minX; y += row + spacing; row = 0 }
+            s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            row = max(row, size.height)
+        }
     }
 }
 
@@ -163,14 +271,14 @@ private struct AddControlSheet: View {
     var add: (ControlButton) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var label = ""
-    @State private var action: ControlAction = .key("f")
+    @State private var action: ControlAction = .combo(["key.keyboard.f"])
     @State private var toggle = false
 
     var body: some View {
         NavigationStack {
             Form {
                 TextField("Название", text: $label)
-                ActionPicker(action: $action)
+                ComboEditor(action: $action)
                 Toggle("Нажатие переключает (вкл/выкл)", isOn: $toggle)
             }
             .navigationTitle("Новая кнопка")
@@ -178,7 +286,8 @@ private struct AddControlSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Добавить") {
-                        add(ControlButton(label: label.isEmpty ? String(localized: "Кнопка") : label,
+                        let auto = action.parts.map(KeyCatalog.label).joined(separator: "+")
+                        add(ControlButton(label: label.isEmpty ? auto : label,
                                           symbol: nil, action: action, x: 0.5, y: 0.5, size: 56,
                                           toggle: toggle))
                         dismiss()
