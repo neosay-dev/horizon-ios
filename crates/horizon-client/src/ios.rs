@@ -35,6 +35,17 @@ static PLAY: Mutex<Option<Vec<String>>> = Mutex::new(None);
 static INPUT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static PROXY: OnceLock<EventLoopProxy<()>> = OnceLock::new();
 static PLAYING: AtomicBool = AtomicBool::new(false);
+static ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+/// Why the game stopped before it opened (elsewhere the process would exit with it).
+pub fn set_error(message: String) {
+    *lock(&ERROR) = Some(message);
+}
+
+/// The last start's error, for the launcher to show.
+pub fn take_error() -> Option<String> {
+    lock(&ERROR).take()
+}
 
 /// Whether the player is in the world with no screen open, where the touch controls show.
 /// The game says so each frame.

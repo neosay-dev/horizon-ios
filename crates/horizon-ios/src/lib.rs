@@ -7,7 +7,8 @@
 //!
 //! C declarations: `ios/Horizon/Bridge/HorizonCore.h`.
 
-use std::ffi::{CStr, c_char};
+use std::ffi::{CStr, CString, c_char};
+use std::sync::Mutex;
 
 unsafe extern "C" {
     fn hz_swift_show_launcher();
@@ -106,4 +107,16 @@ pub unsafe extern "C" fn hz_input(line: *const c_char) {
 #[unsafe(no_mangle)]
 pub extern "C" fn hz_playing() -> bool {
     horizon_client::ios::playing()
+}
+
+static LAST_ERROR: Mutex<Option<CString>> = Mutex::new(None);
+
+/// Why the last Play stopped before the game opened, or null. The text stays valid until the
+/// next call.
+#[unsafe(no_mangle)]
+pub extern "C" fn hz_last_error() -> *const c_char {
+    let mut kept = LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner());
+    *kept = horizon_client::ios::take_error()
+        .map(|e| CString::new(e.replace('\0', " ")).unwrap_or_default());
+    kept.as_ref().map_or(std::ptr::null(), |c| c.as_ptr())
 }

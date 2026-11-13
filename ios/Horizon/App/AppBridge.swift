@@ -53,7 +53,9 @@ final class AppBridge {
     }
 
     func gameFailed() {
-        launcher.status = String(localized: "Игра не запустилась. Подробности в журнале: Library/Horizon/logs.")
+        let reason = hz_last_error().map { String(cString: $0) }
+        launcher.status = reason.map { String(localized: "Игра не запустилась: \($0)") }
+            ?? String(localized: "Игра не запустилась. Журнал: Файлы → Horizon → logs.")
         showLauncher()
     }
 }

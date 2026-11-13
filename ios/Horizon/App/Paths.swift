@@ -10,8 +10,8 @@ enum Paths {
     static let gameDir = documents.appendingPathComponent("game", isDirectory: true)
     /// The prepared resources (`horizon-prepare`'s `.local/horizon-client/26.3`).
     static let resources = documents.appendingPathComponent("resources/26.3", isDirectory: true)
-    /// Logs and crash reports (`--home`).
-    static let home = library.appendingPathComponent("Horizon", isDirectory: true)
+    /// Logs and crash reports (`--home`), in Documents so they can be read in the Files app.
+    static let home = documents.appendingPathComponent("logs", isDirectory: true)
     /// The touch layout.
     static let controls = library.appendingPathComponent("Horizon/controls.json")
     /// The launcher's settings.

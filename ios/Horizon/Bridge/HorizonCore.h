@@ -10,3 +10,5 @@ bool hz_play(const char *args_json);
 void hz_input(const char *line);
 /// Whether the player is in the world with no screen open.
 bool hz_playing(void);
+/// Why the last Play stopped before the game opened, or NULL. Valid until the next call.
+const char *hz_last_error(void);

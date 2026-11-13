@@ -24,6 +24,7 @@ pub(super) fn show(looked_in: &std::path::Path, settings: &Settings) -> Result<(
         &[],
         &settings.language,
     ));
+    #[cfg_attr(target_os = "ios", allow(unused_mut))]
     let mut app = Missing {
         window: None,
         renderer: None,
@@ -108,7 +109,7 @@ impl ApplicationHandler for Missing {
             horizon_client::window::with_icon(Window::default_attributes().with_title("Horizon"))
                 .with_inner_size(winit::dpi::LogicalSize::new(1040.0, 700.0));
         let made = event_loop
-            .create_window(attributes)
+            .create_window(super::window_handler::fit_device(attributes))
             .map_err(Into::into)
             .and_then(|window| {
                 let window = Arc::new(window);

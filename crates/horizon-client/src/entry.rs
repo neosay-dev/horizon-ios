@@ -308,6 +308,12 @@ pub fn main_with(mods: crate::mod_api::Mods) {
         if !help && !usage {
             crash::report_error(&home, side, &*error);
         }
+        // iOS: back to the launcher with the message; exiting would look like a crash.
+        #[cfg(target_os = "ios")]
+        {
+            crate::ios::set_error(error.to_string());
+            return;
+        }
         // Started from Explorer, the console window closes with the game:
         // keep the message on screen until it is read.
         #[cfg(windows)]

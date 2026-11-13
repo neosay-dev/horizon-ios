@@ -297,6 +297,7 @@ pub(super) fn run_loading(
         menu,
         error: None,
     };
+    #[cfg_attr(target_os = "ios", allow(unused_mut))]
     let mut app = App::Loading(Box::new(loading));
     // iOS: the app's loop is already running (the launcher's); the game joins it.
     #[cfg(target_os = "ios")]

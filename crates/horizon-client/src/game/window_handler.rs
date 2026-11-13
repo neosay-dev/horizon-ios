@@ -276,6 +276,21 @@ impl Game<'_> {
     }
 }
 
+/// The window as this device can have it. iOS: the whole screen, whatever size the desktop
+/// game asked for (a 1280 x 720 point view is larger than a phone, and only its corner shows).
+pub(super) fn fit_device(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+    #[cfg(target_os = "ios")]
+    let attributes = {
+        let mut a = attributes;
+        a.inner_size = None;
+        a.min_inner_size = None;
+        a.max_inner_size = None;
+        a.position = None;
+        a
+    };
+    attributes
+}
+
 impl ApplicationHandler for Game<'_> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
@@ -301,11 +316,13 @@ impl ApplicationHandler for Game<'_> {
         // `--offscreen` renders into a texture: its window would only show white.
         let window_step = startup::step("window.create");
         let window = match event_loop.create_window(
-            attributes
+            fit_device(
+                attributes
                 .with_inner_size(winit::dpi::LogicalSize::new(size[0], size[1]))
                 .with_fullscreen(fullscreen.then_some(winit::window::Fullscreen::Borderless(None)))
                 .with_visible(!self.options.offscreen)
                 .with_active(!agent_started),
+            )
         ) {
             Ok(w) => Arc::new(w),
             Err(e) => {

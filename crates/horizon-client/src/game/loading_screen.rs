@@ -106,10 +106,12 @@ impl Loading {
         // `--offscreen` renders into a texture: its window would only show white.
         let window_step = startup::step("window.create");
         let window = match event_loop.create_window(
-            attributes
+            super::window_handler::fit_device(
+                attributes
                 .with_inner_size(winit::dpi::LogicalSize::new(size[0], size[1]))
                 .with_fullscreen(fullscreen.then_some(winit::window::Fullscreen::Borderless(None)))
                 .with_visible(!self.options.as_ref().is_some_and(|o| o.offscreen)),
+            )
         ) {
             Ok(w) => Arc::new(w),
             Err(e) => {
