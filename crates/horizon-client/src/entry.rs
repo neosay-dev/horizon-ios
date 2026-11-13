@@ -33,7 +33,7 @@ pub fn main_with(mods: crate::mod_api::Mods) {
     // The text crates ship (`horizon_hooks::lang`), loaded with the game's own languages.
     horizon_client::lang::install_crate_files(horizon_hooks::lang::engine::all());
     horizon_client::spans::startup::init(std::time::Instant::now());
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = command_line();
     let game_args = args.iter().take_while(|a| *a != "--dedicated");
     let help = game_args
         .clone()
@@ -321,8 +321,21 @@ pub fn main_with(mods: crate::mod_api::Mods) {
             game::exit_code::ERROR
         });
     }
+    // iOS: the game's handler went to the app's one event loop (crate::ios); it is running, not over.
+    #[cfg(target_os = "ios")]
+    if crate::ios::handed_off() {
+        return;
+    }
     horizon_hooks::engine::shutdown();
     logging::flush();
+}
+
+/// The game's command line: the process's, or on iOS (an app has none) the one the launcher's Play gave.
+pub(crate) fn command_line() -> Vec<String> {
+    #[cfg(target_os = "ios")]
+    return crate::ios::args();
+    #[cfg(not(target_os = "ios"))]
+    std::env::args().skip(1).collect()
 }
 
 /// The JVM raises its open-file limit to the hard limit as it starts

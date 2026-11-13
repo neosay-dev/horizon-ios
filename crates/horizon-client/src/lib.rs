@@ -6,6 +6,8 @@ extern crate self as horizon_client;
 pub use horizon_client_lib::*;
 pub mod entry;
 pub mod game;
+#[cfg(target_os = "ios")]
+pub mod ios;
 mod horizon_look;
 pub mod mod_api;
 

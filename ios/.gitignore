@@ -1,0 +1,6 @@
+Horizon.xcodeproj/
+Horizon/Info.plist
+Horizon/Horizon.entitlements
+build/
+Payload/
+*.ipa

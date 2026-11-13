@@ -1,0 +1,21 @@
+[package]
+name = "horizon-ios"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "The iOS app's Rust side: the game as a static library the Swift launcher starts (ios/)"
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+# No controllers (gilrs has no iOS backend; GameController.framework later) and none of
+# Horizon's extras (Discord, friends, heartbeat) yet: the vanilla game with sound.
+horizon-client = { path = "../horizon-client", default-features = false, features = ["audio", "system-allocator"] }
+serde_json = "1"
+log = "0.4"
+
+[lints]
+workspace = true

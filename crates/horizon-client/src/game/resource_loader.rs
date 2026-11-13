@@ -298,6 +298,13 @@ pub(super) fn run_loading(
         error: None,
     };
     let mut app = App::Loading(Box::new(loading));
+    // iOS: the app's loop is already running (the launcher's); the game joins it.
+    #[cfg(target_os = "ios")]
+    {
+        crate::ios::hand_off(app);
+        return Ok(());
+    }
+    #[cfg_attr(target_os = "ios", allow(unreachable_code))]
     let result = EventLoop::new()?.run_app(&mut app);
     narrator::stop();
     match &mut app {

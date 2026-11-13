@@ -228,6 +228,14 @@ impl Game<'_> {
         for request in self.ui_wait.ready() {
             self.answer(request, event_loop);
         }
+        // iOS: the touch controls' lines since the last frame, as a replay feeds them.
+        #[cfg(target_os = "ios")]
+        {
+            for line in crate::ios::take_input() {
+                self.replay_line(&line, event_loop);
+            }
+            crate::ios::set_playing(self.screen == Screen::Playing && self.player.is_some());
+        }
         while let Some(request) = self.control.as_ref().and_then(|c| c.try_recv()) {
             // Once per line received, not once per handler: a deferred `ui`
             // comes back through `ui_wait` and must not be traced twice.

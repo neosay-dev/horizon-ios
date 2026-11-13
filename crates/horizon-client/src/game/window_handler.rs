@@ -339,6 +339,17 @@ impl ApplicationHandler for Game<'_> {
         self.previous = Instant::now();
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        // iOS: a finger on a screen (menus, inventory) is the pointer. In the world the touch
+        // controls' overlay takes the touches and sends lines instead (crate::ios).
+        #[cfg(target_os = "ios")]
+        if let WindowEvent::Touch(touch) = &event {
+            if self.screen != Screen::Playing {
+                for e in crate::ios::touch_as_mouse(touch) {
+                    self.handle_window_event(event_loop, id, e, input_trace::InputOrigin::User);
+                }
+            }
+            return;
+        }
         let key = if self.window.as_ref().is_some_and(|w| w.id() == id)
             && !self.scripted_run()
             && let WindowEvent::KeyboardInput {

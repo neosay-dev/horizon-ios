@@ -1,0 +1,62 @@
+# The iOS app: the Rust game as a static library, the Swift launcher, an unsigned IPA to sideload.
+# Manual only (Actions → iOS → Run workflow). Optional repository variable HZ_MSA_CLIENT_ID:
+# your own Azure app's client ID, approved by Mojang (ios/README.md).
+name: iOS
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust for iOS
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+          cache-targets: true
+
+      - name: Game library (crates/horizon-ios)
+        run: cargo build --release -p horizon-ios --target aarch64-apple-ios
+
+      - name: Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: App (unsigned)
+        run: |
+          cd ios
+          xcodebuild -project Horizon.xcodeproj -scheme Horizon -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            HZ_MSA_CLIENT_ID="${{ vars.HZ_MSA_CLIENT_ID }}" \
+            build | tail -n 200
+
+      - name: IPA
+        run: |
+          cd ios
+          rm -rf Payload && mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/Horizon.app Payload/
+          zip -qry ../Horizon-unsigned.ipa Payload
+          ls -lh ../Horizon-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Horizon-ios-unsigned-${{ github.run_number }}
+          path: Horizon-unsigned.ipa
