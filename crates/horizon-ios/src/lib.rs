@@ -11,6 +11,8 @@ use std::ffi::{CStr, CString, c_char};
 use std::sync::Mutex;
 
 unsafe extern "C" {
+    /// iOS 13+: how much more this process may allocate before iOS ends it (jetsam).
+    fn os_proc_available_memory() -> usize;
     fn hz_swift_show_launcher();
     fn hz_swift_game_started();
     fn hz_swift_game_failed();
@@ -85,8 +87,41 @@ pub unsafe extern "C" fn hz_play(args_json: *const c_char) -> bool {
         let _ = std::fs::create_dir_all(dir);
         let _ = std::env::set_current_dir(dir);
     }
+    watch_memory();
     horizon_client::ios::request_play(args);
     true
+}
+
+/// Logs the memory iOS still allows this process every 2 s and each time it falls by 64 MiB,
+/// flushing the log each time: iOS ends a process over its limit without a word, and
+/// these lines show whether that is what happened.
+fn watch_memory() {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let _ = std::thread::Builder::new()
+            .name("memory-watch".into())
+            .spawn(|| {
+                let mib = |b: usize| b / (1024 * 1024);
+                let mut logged = usize::MAX;
+                let mut at = std::time::Instant::now();
+                loop {
+                    // Safety: no arguments; reads the process's own memory limit.
+                    let left = unsafe { os_proc_available_memory() };
+                    // Also every 2 s: the first lines may come before the log opens.
+                    if logged == usize::MAX
+                        || left + 64 * 1024 * 1024 < logged
+                        || left > logged + 256 * 1024 * 1024
+                        || at.elapsed().as_secs() >= 2
+                    {
+                        at = std::time::Instant::now();
+                        log::info!("Horizon iOS: {} MiB left before the memory limit", mib(left));
+                        horizon_client::logging::flush();
+                        logged = left;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            });
+    });
 }
 
 /// A touch control's control line (`key space down`, `mouse left click`, `turn 2.5 -1`), run at
