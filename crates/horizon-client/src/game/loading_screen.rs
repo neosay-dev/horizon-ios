@@ -401,6 +401,16 @@ pub(super) enum App {
     Loading(Box<Loading>),
     Ready(Box<split::Split<'static>>),
 }
+#[cfg(target_os = "ios")]
+impl crate::ios::Handoff for App {
+    fn error_text(&mut self) -> Option<String> {
+        match self {
+            App::Loading(loading) => loading.error.as_ref().map(ToString::to_string),
+            App::Ready(split) => split.host.error.as_ref().map(ToString::to_string),
+        }
+    }
+}
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         match self {

@@ -100,6 +100,13 @@ impl Missing {
     }
 }
 
+#[cfg(target_os = "ios")]
+impl crate::ios::Handoff for Missing {
+    fn error_text(&mut self) -> Option<String> {
+        self.error.as_ref().map(ToString::to_string)
+    }
+}
+
 impl ApplicationHandler for Missing {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {

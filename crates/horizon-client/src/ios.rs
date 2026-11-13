@@ -61,7 +61,14 @@ pub fn set_playing(playing: bool) {
 }
 
 thread_local! {
-    static HANDOFF: RefCell<Option<Box<dyn ApplicationHandler>>> = const { RefCell::new(None) };
+    static HANDOFF: RefCell<Option<Box<dyn Handoff>>> = const { RefCell::new(None) };
+}
+
+/// A game handler the root loop runs, which can say why it asked the loop to end.
+pub trait Handoff: ApplicationHandler {
+    /// The error it stopped with, if any. Elsewhere `run_app` returns and the caller logs it;
+    /// on iOS winit ignores the request to end the loop, so the root checks after each turn.
+    fn error_text(&mut self) -> Option<String>;
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -93,7 +100,7 @@ pub fn take_input() -> Vec<String> {
 }
 
 /// The game's handler, where another platform would run `EventLoop::run_app` with it.
-pub fn hand_off(app: impl ApplicationHandler + 'static) {
+pub fn hand_off(app: impl Handoff + 'static) {
     HANDOFF.with(|h| *h.borrow_mut() = Some(Box::new(app)));
 }
 
@@ -117,7 +124,7 @@ pub fn run(hooks: Hooks) -> Result<(), winit::error::EventLoopError> {
 
 struct Root {
     hooks: Hooks,
-    game: Option<Box<dyn ApplicationHandler>>,
+    game: Option<Box<dyn Handoff>>,
     shown: bool,
     /// The game's window, which the virtual mouse's events go to.
     window: Option<WindowId>,
@@ -190,6 +197,16 @@ impl ApplicationHandler for Root {
                 }
             }
             g.about_to_wait(event_loop);
+            // The game stopped with an error and asked the loop to end, which iOS ignores:
+            // log it and go back to the launcher with it.
+            if let Some(e) = g.error_text() {
+                log::error!("Horizon: {e}");
+                let _ = std::fs::write(crate::logging::game_home().join("last-error.txt"), &e);
+                crate::logging::flush();
+                self.game = None;
+                set_error(e);
+                (self.hooks.game_failed)();
+            }
         }
     }
     fn suspended(&mut self, event_loop: &ActiveEventLoop) {
@@ -200,6 +217,7 @@ impl ApplicationHandler for Root {
     fn exiting(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(g) = &mut self.game {
             g.exiting(event_loop);
+            crate::logging::flush();
         }
     }
     fn memory_warning(&mut self, event_loop: &ActiveEventLoop) {
