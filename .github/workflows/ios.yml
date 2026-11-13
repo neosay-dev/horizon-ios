@@ -30,6 +30,8 @@ jobs:
     env:
       IPHONEOS_DEPLOYMENT_TARGET: "17.0"
       CARGO_TERM_COLOR: always
+      # The `fast` profile (16 codegen units, no LTO): horizon-client builds on every core.
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +54,7 @@ jobs:
           cache-on-failure: true
 
       - name: Game library (crates/horizon-ios)
-        run: cargo build --release -p horizon-ios --target aarch64-apple-ios 2>&1 | tee rust-ios-build.log
+        run: cargo build --profile fast -p horizon-ios --target aarch64-apple-ios 2>&1 | tee rust-ios-build.log
 
       - name: Xcode project
         run: |
