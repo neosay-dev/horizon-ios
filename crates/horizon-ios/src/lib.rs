@@ -100,9 +100,9 @@ pub unsafe extern "C" fn hz_play(args_json: *const c_char) -> bool {
     true
 }
 
-/// Logs the memory iOS still allows this process every 2 s and each time it falls by 64 MiB,
+/// Logs the memory iOS still allows this process every second and each time it falls by 32 MiB,
 /// flushing the log each time: iOS ends a process over its limit without a word, and
-/// these lines show whether that is what happened.
+/// these lines show whether that is what happened (a fast fall just before the log ends).
 fn watch_memory() {
     static STARTED: std::sync::Once = std::sync::Once::new();
     STARTED.call_once(|| {
@@ -115,18 +115,18 @@ fn watch_memory() {
                 loop {
                     // Safety: no arguments; reads the process's own memory limit.
                     let left = unsafe { os_proc_available_memory() };
-                    // Also every 2 s: the first lines may come before the log opens.
+                    // Also every second: the first lines may come before the log opens.
                     if logged == usize::MAX
-                        || left + 64 * 1024 * 1024 < logged
+                        || left + 32 * 1024 * 1024 < logged
                         || left > logged + 256 * 1024 * 1024
-                        || at.elapsed().as_secs() >= 2
+                        || at.elapsed().as_secs() >= 1
                     {
                         at = std::time::Instant::now();
                         log::info!("Horizon iOS: {} MiB left before the memory limit", mib(left));
                         horizon_client::logging::flush();
                         logged = left;
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
             });
     });

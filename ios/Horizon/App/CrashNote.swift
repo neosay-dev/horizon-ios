@@ -17,15 +17,25 @@ enum CrashNote {
                 + exception.callStackSymbols.joined(separator: "\n")
             CrashNote.write(text)
         }
+        // A stack overflow leaves no stack for the handler: it runs on a stack of its own instead
+        // (the main thread's; other threads still use their own stack).
+        let altSize = 256 * 1024
+        var alt = stack_t(ss_sp: UnsafeMutableRawPointer.allocate(byteCount: altSize, alignment: 16),
+                          ss_size: altSize, ss_flags: 0)
+        sigaltstack(&alt, nil)
+        let handler: @convention(c) (Int32) -> Void = { number in
+            // Not async-signal-safe, but the process is ending anyway: the stack is worth it.
+            let text = "signal \(number) (\(String(cString: strsignal(number))))"
+                + " on thread \(Thread.isMainThread ? "main" : "other")\n\n"
+                + Thread.callStackSymbols.joined(separator: "\n")
+            CrashNote.write(text)
+            signal(number, SIG_DFL)
+            raise(number)
+        }
         for sig in [SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP] {
-            signal(sig) { number in
-                // Not async-signal-safe, but the process is ending anyway: the stack is worth it.
-                let text = "signal \(number) (\(String(cString: strsignal(number))))\n\n"
-                    + Thread.callStackSymbols.joined(separator: "\n")
-                CrashNote.write(text)
-                signal(number, SIG_DFL)
-                raise(number)
-            }
+            var action = sigaction(__sigaction_u: __sigaction_u(__sa_handler: handler),
+                                   sa_mask: 0, sa_flags: SA_ONSTACK)
+            sigaction(sig, &action, nil)
         }
     }
 
