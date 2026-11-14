@@ -479,6 +479,16 @@ impl ApplicationHandler for App {
             game.exiting(event_loop);
         }
     }
+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+        if let App::Ready(game) = self {
+            game.suspended(event_loop);
+        }
+    }
+    fn memory_warning(&mut self, event_loop: &ActiveEventLoop) {
+        if let App::Ready(game) = self {
+            game.memory_warning(event_loop);
+        }
+    }
 }
 
 /// Every launch reads the prepared game files (`horizon-prepare`'s output, whose

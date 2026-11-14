@@ -2298,6 +2298,11 @@ struct Game<'a> {
     /// When the window lost focus, while it is still without
     /// (`Minecraft.lastActiveTime`: pausing waits 500 ms).
     focus_lost: Option<Instant>,
+    /// The app is in the background (iOS, Android: winit's `suspended`): no frames until it
+    /// is back, since iOS ends an app that sends the GPU work from the background.
+    backgrounded: bool,
+    /// When the last memory warning lowered the render distance (`memory_warning`).
+    memory_warned: Option<Instant>,
     /// The keyboard's modifier state (`KeyEvent.modifiers`).
     modifiers: winit::keyboard::ModifiersState,
     /// The window's fullscreen request and reported state.
@@ -11478,6 +11483,8 @@ impl<'a> Game<'a> {
             ime_allowed: false,
             ime_area: None,
             focus_lost: None,
+            backgrounded: false,
+            memory_warned: None,
             modifiers: winit::keyboard::ModifiersState::empty(),
             fullscreen: horizon_client::window::FullscreenState::new(false),
             video_modes: Default::default(),

@@ -611,6 +611,15 @@ impl ApplicationHandler for Split<'_> {
         }
     }
 
+    // The app's background and memory warnings (iOS) are the game's, P1's.
+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+        self.host.suspended(event_loop);
+    }
+
+    fn memory_warning(&mut self, event_loop: &ActiveEventLoop) {
+        self.host.memory_warning(event_loop);
+    }
+
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if self.surfaces.is_empty() {
             return self.host.window_event(event_loop, id, event);

@@ -54,6 +54,9 @@ targets:
         # Trackpad and mouse on iPad reach winit as pointer events.
         UIApplicationSupportsIndirectInputEvents: true
         ITSAppUsesNonExemptEncryption: false
+        # Servers and LAN worlds on the local network: without this text iOS blocks those
+        # connections without asking (iOS 14+).
+        NSLocalNetworkUsageDescription: Horizon подключается к серверам и мирам в локальной сети (LAN).
         LSApplicationCategoryType: public.app-category.games
     # The game's memory: the larger limit where the device allows it.
     entitlements:

@@ -51,6 +51,76 @@ fn held_focus(
 }
 
 impl Game<'_> {
+    /// winit's `suspended`: the app goes to the background (iOS: `applicationWillResignActive`,
+    /// also the Control Center or a call). The window loses the focus as on a desktop, and the
+    /// game pauses at once instead of 500 ms later: a single player world's pause saves it
+    /// (`IntegratedServer.tickServer`), and iOS may end a background app at any time. No frames
+    /// are drawn until the app is back (`resumed`).
+    pub(super) fn app_suspended(&mut self, event_loop: &dyn EventLoopCtl) {
+        if self.backgrounded {
+            return;
+        }
+        self.backgrounded = true;
+        log::info!("Horizon: the app went to the background");
+        if let Some(id) = self.window.as_ref().map(|w| w.id())
+            && self.focused
+        {
+            self.handle_window_event(
+                event_loop,
+                id,
+                WindowEvent::Focused(false),
+                input_trace::InputOrigin::User,
+            );
+        }
+        // pause_if_inactive's 500 ms have passed: the app may get no other turn before it stops.
+        self.focus_lost = Some(Instant::now() - Duration::from_secs(1));
+        self.pause_if_inactive();
+        self.pause = self.pauses_game();
+        if let Some(server) = &self.integrated {
+            server.set_paused(self.pause);
+        }
+        horizon_client::logging::flush();
+    }
+
+    /// The app is in front again (`resumed` with the window already open): frames and the focus
+    /// come back; the pause menu stays until the player leaves it, as vanilla's does.
+    pub(super) fn app_foreground(&mut self, event_loop: &dyn EventLoopCtl) {
+        self.backgrounded = false;
+        log::info!("Horizon: the app is in front again");
+        if let Some(window) = self.window.clone() {
+            if !self.focused {
+                self.handle_window_event(
+                    event_loop,
+                    window.id(),
+                    WindowEvent::Focused(true),
+                    input_trace::InputOrigin::User,
+                );
+            }
+            window.request_redraw();
+        }
+    }
+
+    /// winit's `memory_warning` (iOS): the system is about to end the app for its memory. The
+    /// render distance drops by 2 chunks (not below 4, at most once in 10 s), which frees the far
+    /// chunks' meshes and data; the log says so.
+    pub(super) fn on_memory_warning(&mut self) {
+        let distance = self.settings.render_distance;
+        log::warn!("Horizon: the system warned that memory is low (render distance {distance})");
+        let recent = self
+            .memory_warned
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(10));
+        if !recent && distance > 4 {
+            self.memory_warned = Some(Instant::now());
+            self.settings.render_distance = (distance - 2).max(4);
+            log::warn!(
+                "Horizon: render distance lowered to {} to stay within the memory limit",
+                self.settings.render_distance
+            );
+            self.apply_settings();
+        }
+        horizon_client::logging::flush();
+    }
+
     /// winit's `window_event`. The control socket and the pad menu call it too, with the
     /// input they make up.
     pub(super) fn handle_window_event(
@@ -67,6 +137,10 @@ impl Game<'_> {
             None => self.options.headless,
         };
         if !ours {
+            return;
+        }
+        // In the background no frame is drawn (app_suspended).
+        if self.backgrounded && matches!(event, WindowEvent::RedrawRequested) {
             return;
         }
         if locks_out(origin, self.scripted_run(), &event) {
@@ -242,6 +316,11 @@ impl Game<'_> {
             event_loop.exit();
             return;
         }
+        // In the background: no frames (and so no GPU work) until `resumed`.
+        if self.backgrounded {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
         if let Some(w) = &self.window {
             if self.options.offscreen {
                 // Offscreen frames don't wait for the window to be drawn: an
@@ -294,6 +373,9 @@ pub(super) fn fit_device(attributes: winit::window::WindowAttributes) -> winit::
 impl ApplicationHandler for Game<'_> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
+            if self.backgrounded {
+                self.app_foreground(event_loop);
+            }
             return;
         }
         debug_keys::warm_debug_cpu();
@@ -406,6 +488,12 @@ impl ApplicationHandler for Game<'_> {
     }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         self.idle(event_loop);
+    }
+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+        self.app_suspended(event_loop);
+    }
+    fn memory_warning(&mut self, _event_loop: &ActiveEventLoop) {
+        self.on_memory_warning();
     }
     /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
     /// applicationWillTerminate without a CloseRequested; vanilla's GLFW
