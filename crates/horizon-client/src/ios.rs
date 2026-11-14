@@ -119,8 +119,17 @@ pub fn run(hooks: Hooks) -> Result<(), winit::error::EventLoopError> {
         shown: false,
         window: None,
     };
-    event_loop.run_app(&mut root)
+    // iOS gives the main thread 1 MB of stack, and the game needs the 8 MB it has on macOS and
+    // Linux (Windows links 8 MB for it: packaging/windows/exe.rs): the handoff to the game builds
+    // `Game` deep in the event loop, and with 1 MB the process died there without a note. The
+    // whole loop (UIApplicationMain and every callback) runs on a stack of its own instead, still
+    // on the main thread. It never returns, so the stack is never freed.
+    stacker::grow(MAIN_STACK, || event_loop.run_app(&mut root))
 }
+
+/// The main thread's stack for the event loop: twice the desktop's 8 MB, as headroom; only the
+/// pages it touches take memory.
+const MAIN_STACK: usize = 16 << 20;
 
 struct Root {
     hooks: Hooks,
