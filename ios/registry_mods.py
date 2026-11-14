@@ -240,7 +240,10 @@ def main():
     import native_compat as nc  # noqa: E402 (the registry's own: horizon-mixins, apply, tracing)
     nc.native_trace = __import__("native_trace")
     shutil.rmtree(args.out, ignore_errors=True)
-    args.out.mkdir(parents=True)
+    # Both folders always exist: the Xcode project copies them into the app as they are, empty or not.
+    for folder in ("Registry", "native-content"):
+        (args.out / folder).mkdir(parents=True)
+        (args.out / folder / ".keep").write_text("")
     report = {"game": GAME, "native": [], "content": [], "left_out": []}
     found = entries(args.registry)
     content(nc, found, args.out, report)
@@ -253,7 +256,6 @@ def main():
         except SystemExit as e:
             log(f"Native mods: {e}")
             report["left_out"].append({"id": "*", "kind": "native-mod", "why": str(e)})
-    (args.out / "Registry").mkdir(exist_ok=True)
     (args.out / "Registry" / "registry.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     log(f"{len(report['native'])} native mods built in, {len(report['content'])} content files,"
         f" {len(report['left_out'])} left out.")
