@@ -5,6 +5,11 @@ name: iOS
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Release this build as version (e.g. 0.1.0): tag ios-v<version>, notes from ios/RELEASE_NOTES.md"
+        required: false
+        default: ""
   push:
     branches: [ios-port]
     # A release: push a tag `ios-v<version>`; the IPA goes onto the GitHub release of that tag.
@@ -99,12 +104,14 @@ jobs:
           path: Horizon-unsigned.ipa
 
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/ios-v')
+        if: startsWith(github.ref, 'refs/tags/ios-v') || inputs.release != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
         run: |
-          tag="${GITHUB_REF_NAME}"
+          if [ -n "$RELEASE" ]; then tag="ios-v${RELEASE#v}"; else tag="${GITHUB_REF_NAME}"; fi
           gh release view "$tag" >/dev/null 2>&1 \
-            || gh release create "$tag" --title "Horizon iOS ${tag#ios-v}" --notes-file ios/RELEASE_NOTES.md
+            || gh release create "$tag" --target "$GITHUB_SHA" --title "Horizon iOS ${tag#ios-v}" \
+              --notes-file ios/RELEASE_NOTES.md --latest
           cp Horizon-unsigned.ipa "Horizon-${tag#ios-v}.ipa"
           gh release upload "$tag" "Horizon-${tag#ios-v}.ipa" --clobber
