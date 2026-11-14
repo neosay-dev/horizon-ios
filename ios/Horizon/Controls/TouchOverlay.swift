@@ -300,7 +300,13 @@ final class VirtualMouseView: UIView {
         }
         let p = game.convert(position, from: self)
         let scale = game.contentScaleFactor
-        hz_pointer_move(Double(p.x * scale), Double(p.y * scale))
+        // The game's picture has the safe area's size (winit's inner size: 724x355 points on a
+        // notched 812x375 screen), stretched over the whole view: the view's points scale down to
+        // it, or a click lands right of (and below) the cursor, the more so the further right.
+        let safe = game.safeAreaLayoutGuide.layoutFrame.size
+        let sx = safe.width > 0 && game.bounds.width > 0 ? safe.width / game.bounds.width : 1
+        let sy = safe.height > 0 && game.bounds.height > 0 ? safe.height / game.bounds.height : 1
+        hz_pointer_move(Double(p.x * sx * scale), Double(p.y * sy * scale))
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
