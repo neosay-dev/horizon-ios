@@ -11,9 +11,9 @@ publish = false
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-# No controllers (gilrs has no iOS backend; GameController.framework later) and none of
-# Horizon's extras (Discord, friends, heartbeat) yet: the vanilla game with sound.
-horizon-client = { path = "../horizon-client", default-features = false, features = ["audio", "system-allocator"] }
+# No controllers (gilrs has no iOS backend; GameController.framework later). Horizon's extras are
+# on: its Settings and Mods pages (the built-in mods' switches and settings), Play with Friends.
+horizon-client = { path = "../horizon-client", default-features = false, features = ["audio", "system-allocator", "horizon-extras"] }
 serde_json = "1"
 log = "0.4"
 

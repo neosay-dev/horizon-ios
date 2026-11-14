@@ -92,9 +92,50 @@ final class ModsStore: ObservableObject {
     /// The Rust (native) mods compiled into this build's game: always on, nothing to install.
     @Published var builtIn: [Built.Native] = []
 
+    /// The game's switches: `mod.<id>:true|false` lines of horizon-mods.txt, beside options.txt.
+    @Published private(set) var switches: [String: Bool] = [:]
+
     init() {
+        loadSwitches()
         installBundled()
         loadInstalled()
+    }
+
+    // MARK: On and off
+
+    /// horizon-mods.txt, as the game's Options > Mods keeps it (mod_list.rs): a content mod is off until its line
+    /// says `true`; a native (Rust) mod is built in, so on until its line says `false`, and does nothing then.
+    private static var switchesFile: URL { Paths.gameDir.appendingPathComponent("horizon-mods.txt") }
+
+    func loadSwitches() {
+        let text = (try? String(contentsOf: Self.switchesFile, encoding: .utf8)) ?? ""
+        var found: [String: Bool] = [:]
+        for line in text.split(whereSeparator: \.isNewline) {
+            guard line.hasPrefix("mod."), let colon = line.lastIndex(of: ":") else { continue }
+            let id = String(line[line.index(line.startIndex, offsetBy: 4)..<colon])
+            found[id] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces) == "true"
+        }
+        switches = found
+    }
+
+    func nativeOn(_ id: String) -> Bool { switches[id] != false }
+    func contentOn(_ id: String) -> Bool { switches[id] == true }
+
+    /// Sets mod `id` on or off, keeping every other line of the file (other mods, their keys).
+    func setSwitch(_ id: String, on: Bool) {
+        let text = (try? String(contentsOf: Self.switchesFile, encoding: .utf8)) ?? ""
+        var lines = text.split(whereSeparator: \.isNewline).map(String.init)
+            .filter { !$0.hasPrefix("mod.\(id):") }
+        lines.append("mod.\(id):\(on)")
+        try? FileManager.default.createDirectory(at: Paths.gameDir, withIntermediateDirectories: true)
+        try? (lines.joined(separator: "\n") + "\n").write(to: Self.switchesFile, atomically: true, encoding: .utf8)
+        switches[id] = on
+    }
+
+    /// The registry id of an installed content mod (`horizon:<id>`), the one its switch uses.
+    func contentID(_ mod: InstalledMod) -> String? {
+        guard mod.kind == .mod, mod.key.hasPrefix("horizon:") else { return nil }
+        return String(mod.key.dropFirst("horizon:".count))
     }
 
     // MARK: Built in
@@ -130,6 +171,8 @@ final class ModsStore: ObservableObject {
                 guard (try? FileManager.default.copyItem(at: from, to: to)) != nil else { continue }
             }
             copied.insert(key)
+            // The built-in content mods start on: they came with the game.
+            if kind == .mod && switches[c.id] == nil { setSwitch(c.id, on: true) }
             list.removeAll { $0.kind == kind && $0.file == c.file }
             list.append(InstalledMod(key: "horizon:\(c.id)", name: c.name, kind: kind, file: c.file))
         }

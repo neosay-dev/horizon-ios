@@ -298,6 +298,7 @@ struct ModsPage: View {
             refresh()
         }
         .onChange(of: kind) { _, _ in refresh() }
+        .onAppear { mods.loadSwitches() }
         .onChange(of: query) { _, _ in if tab == .modrinth { refresh() } }
     }
 
@@ -363,8 +364,13 @@ struct ModsPage: View {
                 Hairline()
                 ForEach(Array(mods.builtIn.enumerated()), id: \.element.id) { i, mod in
                     NumberedRow(number: i + 1, title: mod.id,
-                                detail: "\(mod.version) · собран в игру, всегда включён. Настройки: в игре, Настройки → Моды")
+                                detail: "\(mod.version) · \(mods.nativeOn(mod.id) ? "включён" : "выключен")") {
+                        HZToggle(isOn: Binding(get: { mods.nativeOn(mod.id) },
+                                               set: { mods.setSwitch(mod.id, on: $0) }))
+                    }
                 }
+                Text("Rust-моды собраны в игру: выключенный ничего не делает. Их настройки: в игре, Настройки → Моды.")
+                    .font(HZ.sans(12)).foregroundStyle(HZ.faint).padding(.top, 8)
                 Eyebrow(text: "Файлы", status: "\(mods.installed.count)", statusColor: HZ.accentText)
                     .padding(.top, 22).padding(.bottom, 8)
             }
@@ -373,12 +379,24 @@ struct ModsPage: View {
             } else {
                 Hairline()
                 ForEach(Array(mods.installed.enumerated()), id: \.element.id) { i, mod in
-                    NumberedRow(number: i + 1, title: mod.name, detail: "\(mod.kind.title) · \(mod.file)") {
-                        Button("Удалить") { mods.remove(mod) }.buttonStyle(HZButton(kind: .text))
+                    NumberedRow(number: i + 1, title: mod.name, detail: fileDetail(mod)) {
+                        HStack(spacing: 14) {
+                            if let id = mods.contentID(mod) {
+                                HZToggle(isOn: Binding(get: { mods.contentOn(id) },
+                                                       set: { mods.setSwitch(id, on: $0) }))
+                            }
+                            Button("Удалить") { mods.remove(mod) }.buttonStyle(HZButton(kind: .text))
+                        }
                     }
                 }
             }
         }
+    }
+
+    private func fileDetail(_ mod: InstalledMod) -> String {
+        if mods.contentID(mod) != nil { return "\(mod.kind.title) · \(mod.file)" }
+        let where_ = mod.kind == .shader ? "Настройки → Шейдеры" : mod.kind == .resourcepack ? "Настройки → Пакеты ресурсов" : "Настройки → Моды"
+        return "\(mod.kind.title) · включается в игре: \(where_)"
     }
 
     private func matches(_ item: ModItem) -> Bool {
