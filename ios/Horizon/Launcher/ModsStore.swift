@@ -89,13 +89,69 @@ final class ModsStore: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private static let manifest = Paths.library.appendingPathComponent("Horizon/installed-mods.json")
 
-    init() { loadInstalled() }
+    /// The Rust (native) mods compiled into this build's game: always on, nothing to install.
+    @Published var builtIn: [Built.Native] = []
+
+    init() {
+        installBundled()
+        loadInstalled()
+    }
+
+    // MARK: Built in
+
+    /// What the build put in (ios/registry_mods.py, Horizon.app/Registry/registry.json).
+    struct Built: Decodable {
+        struct Native: Decodable, Identifiable { let id: String; let version: String }
+        struct Content: Decodable { let id: String; let name: String; let kind: String; let version: String; let file: String }
+        let native: [Native]
+        let content: [Content]
+    }
+
+    /// The registry's files the build carries go into the game folder once each: a file removed afterwards stays
+    /// removed.
+    private func installBundled() {
+        guard let root = Bundle.main.url(forResource: "Registry", withExtension: nil),
+              let data = try? Data(contentsOf: root.appendingPathComponent("registry.json")),
+              let built = try? JSONDecoder().decode(Built.self, from: data) else { return }
+        builtIn = built.native
+        let defaults = UserDefaults.standard
+        let copiedKey = "bundled-registry-files"
+        var copied = Set(defaults.stringArray(forKey: copiedKey) ?? [])
+        var list = readManifest()
+        for c in built.content {
+            guard let kind = ModKind(rawValue: c.kind) else { continue }
+            let key = "\(kind.rawValue)/\(c.file)"
+            if copied.contains(key) { continue }
+            let from = root.appendingPathComponent("game/\(kind.folder)/\(c.file)")
+            let dir = Paths.gameDir.appendingPathComponent(kind.folder, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let to = dir.appendingPathComponent(c.file)
+            if !FileManager.default.fileExists(atPath: to.path) {
+                guard (try? FileManager.default.copyItem(at: from, to: to)) != nil else { continue }
+            }
+            copied.insert(key)
+            list.removeAll { $0.kind == kind && $0.file == c.file }
+            list.append(InstalledMod(key: "horizon:\(c.id)", name: c.name, kind: kind, file: c.file))
+        }
+        defaults.set(Array(copied), forKey: copiedKey)
+        writeManifest(list)
+    }
+
+    private func readManifest() -> [InstalledMod] {
+        let data = try? Data(contentsOf: Self.manifest)
+        return data.flatMap { try? JSONDecoder().decode([InstalledMod].self, from: $0) } ?? []
+    }
+
+    private func writeManifest(_ list: [InstalledMod]) {
+        try? FileManager.default.createDirectory(at: Self.manifest.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        if let data = try? JSONEncoder().encode(list) { try? data.write(to: Self.manifest, options: .atomic) }
+    }
 
     // MARK: Installed
 
     func loadInstalled() {
-        let data = try? Data(contentsOf: Self.manifest)
-        var list = data.flatMap { try? JSONDecoder().decode([InstalledMod].self, from: $0) } ?? []
+        var list = readManifest()
         // A file removed in the Files app is gone from the list too.
         list.removeAll { !FileManager.default.fileExists(atPath: path(of: $0).path) }
         // Files put into the folders by hand are listed as well.
@@ -111,11 +167,7 @@ final class ModsStore: ObservableObject {
         installed = list.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private func saveInstalled() {
-        try? FileManager.default.createDirectory(at: Self.manifest.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(installed) { try? data.write(to: Self.manifest, options: .atomic) }
-    }
+    private func saveInstalled() { writeManifest(installed) }
 
     private func path(of mod: InstalledMod) -> URL {
         Paths.gameDir.appendingPathComponent(mod.kind.folder).appendingPathComponent(mod.file)

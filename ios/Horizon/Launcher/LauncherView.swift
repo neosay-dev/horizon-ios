@@ -225,7 +225,8 @@ struct PlayPage: View {
     }
 
     private var modsLine: String {
-        let parts = ModKind.allCases.compactMap { kind -> String? in
+        var parts = mods.builtIn.isEmpty ? [] : ["Rust-моды: \(mods.builtIn.count)"]
+        parts += ModKind.allCases.compactMap { kind -> String? in
             let n = mods.count(kind)
             return n > 0 ? "\(kind.title): \(n)" : nil
         }
@@ -356,6 +357,17 @@ struct ModsPage: View {
 
     private var installedList: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if !mods.builtIn.isEmpty {
+                Eyebrow(text: "Rust-моды в игре", status: "\(mods.builtIn.count)", statusColor: HZ.accentText)
+                    .padding(.bottom, 8)
+                Hairline()
+                ForEach(Array(mods.builtIn.enumerated()), id: \.element.id) { i, mod in
+                    NumberedRow(number: i + 1, title: mod.id,
+                                detail: "\(mod.version) · собран в игру, всегда включён. Настройки: в игре, Настройки → Моды")
+                }
+                Eyebrow(text: "Файлы", status: "\(mods.installed.count)", statusColor: HZ.accentText)
+                    .padding(.top, 22).padding(.bottom, 8)
+            }
             if mods.installed.isEmpty {
                 Note(text: "Пока ничего не установлено. Файлы лежат в «Файлах»: Horizon → game → horizon-mods, resourcepacks, shaderpacks.")
             } else {

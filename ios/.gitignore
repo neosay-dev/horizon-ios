@@ -4,3 +4,4 @@ Horizon/Horizon.entitlements
 build/
 Payload/
 *.ipa
+registry-out/

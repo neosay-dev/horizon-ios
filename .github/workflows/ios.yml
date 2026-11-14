@@ -32,7 +32,7 @@ permissions:
 jobs:
   ipa:
     runs-on: macos-26
-    timeout-minutes: 120
+    timeout-minutes: 240
     defaults:
       run:
         # Explicit bash enables pipefail, so tee/tail cannot hide build failures.
@@ -63,8 +63,30 @@ jobs:
           cache-targets: true
           cache-on-failure: true
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Horizon's registry built in: the native (Rust) mods that apply and compile for the iPhone are written into
+      # the game's source here (an iPhone can't compile them), the content mods, resource packs and shader packs go
+      # into the app (ios/registry_mods.py).
+      - name: Registry mods (built in)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git clone --depth 1 https://github.com/horizon-rust/horizon-mods "$RUNNER_TEMP/horizon-mods"
+          feature=$(python3 ios/registry_mods.py --registry "$RUNNER_TEMP/horizon-mods" --out ios/registry-out \
+            2> >(tee registry-mods.log >&2))
+          echo "HZ_MODS_FEATURE=$feature" >> "$GITHUB_ENV"
+          python3 -c "import json; r = json.load(open('ios/registry-out/Registry/registry.json')); \
+            print('native:', ', '.join(m['id'] for m in r['native']) or '-'); \
+            print('content:', len(r['content']), 'left out:', len(r['left_out']))"
+
       - name: Game library (crates/horizon-ios)
-        run: cargo build --profile fast -p horizon-ios --target aarch64-apple-ios 2>&1 | tee rust-ios-build.log
+        run: |
+          features=()
+          if [ "${HZ_MODS_FEATURE:-0}" = 1 ]; then features=(--features horizon-client/mods); fi
+          cargo build --profile fast -p horizon-ios --target aarch64-apple-ios "${features[@]}" 2>&1 | tee rust-ios-build.log
 
       - name: Xcode project
         run: |
@@ -88,6 +110,8 @@ jobs:
           path: |
             rust-ios-build.log
             xcode-ios-build.log
+            registry-mods.log
+            ios/registry-out/Registry/registry.json
           if-no-files-found: ignore
 
       - name: IPA

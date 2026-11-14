@@ -17,6 +17,17 @@ targets:
     platform: iOS
     sources:
       - path: Horizon
+      # Horizon's registry built in (registry_mods.py, CI): content mods, resource packs and shader packs the
+      # launcher copies into the game folder once, and the native mods' content beside the game, where it reads it
+      # (Horizon.app/native-content, the executable's folder).
+      - path: registry-out/Registry
+        type: folder
+        optional: true
+        buildPhase: resources
+      - path: registry-out/native-content
+        type: folder
+        optional: true
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.neosay.horizon
@@ -66,6 +77,8 @@ targets:
         # connections without asking (iOS 14+).
         NSLocalNetworkUsageDescription: Horizon подключается к серверам и мирам в локальной сети (LAN).
         LSApplicationCategoryType: public.app-category.games
+        # Built-in mods (Simple Voice Chat): iOS ends an app that opens the microphone without this text.
+        NSMicrophoneUsageDescription: Голосовой чат в игре (мод Simple Voice Chat).
     # The game's memory: the larger limit where the device allows it.
     entitlements:
       path: Horizon/Horizon.entitlements
