@@ -421,5 +421,5 @@ final class ModsStore: ObservableObject {
         }
     }
 
-    nonisolated static let agent = "neosay-dev/horizon-ios/0.2.0 (iOS launcher)"
+    nonisolated static let agent = "neosay-dev/horizon-ios/0.2.1 (iOS launcher)"
 }

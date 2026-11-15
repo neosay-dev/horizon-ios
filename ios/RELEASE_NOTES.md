@@ -1,19 +1,16 @@
-Horizon iOS 0.2.0: моды, новый лаунчер и клавиатура.
+Horizon iOS 0.2.1: производительность, защита от перегрева и удобнее моды.
 
 ### Новое
-- 81 Rust-мод из реестра Horizon встроен в игру: AppleSkin, JEI, REI, Jade, Minimap, Waypoints, Zoom, Freecam, Fullbright, Dynamic Lights, Keystrokes, Simple Voice Chat и другие
-- Моды без кода, ресурспаки и шейдеры из реестра Horizon встроены и ставятся в игру сами
-- Лаунчер в стиле оригинального Horizon: страницы Играть, Моды, Новое, Настройки
-- Моды: каталог Horizon и Modrinth (ресурспаки и шейдеры), установка в один тап, переключатели для каждого мода
-- В игре появились Horizon Settings и страница Моды с настройками модов
-- Клавиатура: печатай имя и адрес сервера, название мира, таблички и книги
-- Кнопки меню (ЛКМ, ПКМ, Назад, колёсико) настраиваются в редакторе: вкладка «В меню»
-- Новая иконка приложения
-- Источник для AltStore / SideStore
+- Игра собрана с LTO (профиль `ios`): быстрее на процессоре
+- 120 Гц на iPhone с ProMotion (раньше iOS держала игру на 60 Гц)
+- Настройки → «Режим производительности»: мир рисуется в 75 % разрешения и поднимается до 100 %, пока хватает кадров (включён по умолчанию)
+- Настройки → «Генерация кадров» (FSR 3.1), выключена по умолчанию
+- Настройки → «Защита от перегрева»: на горячем телефоне дальность прорисовки временно 6 или 4 чанка, потом возвращается
+- Моды: вкладка «В игре» открывается первой, кнопки «Включить все» и «Выключить все» для Rust-модов
+- Вкладки лаунчера крупнее, с откликом при переключении
 
 ### Исправлено
-- Вылет при удалении кнопки в редакторе управления
-- «Назад» и клавиши не работали в главном меню
+- Версия приложения в iOS и AltStore теперь настоящая (раньше 1.0)
 
 Полный список: ios/CHANGELOG.md
 
@@ -22,22 +19,19 @@ IPA без подписи: ставь через AltStore, SideStore или Side
 
 ---
 
-Horizon iOS 0.2.0: mods, a new launcher and a keyboard.
+Horizon iOS 0.2.1: performance, a heat guard and handier mods.
 
 ### New
-- 81 Rust mods from Horizon's registry built into the game: AppleSkin, JEI, REI, Jade, Minimap, Waypoints, Zoom, Freecam, Fullbright, Dynamic Lights, Keystrokes, Simple Voice Chat and more
-- Content mods, resource packs and shaders from Horizon's registry come built in and install themselves
-- A launcher in the original Horizon's look: Play, Mods, What's new and Settings pages
-- Mods: Horizon's catalogue and Modrinth (resource packs and shaders), one-tap install, a switch for every mod
-- In game: Horizon Settings and the Mods page with each mod's settings
-- Keyboard: type a server's name and address, a world's name, signs and books
-- The menu's buttons (LMB, RMB, Back, the wheel) are editable: the editor's "In menu" tab
-- New app icon
-- An AltStore / SideStore source
+- The game is built with LTO (the `ios` profile): faster on the CPU
+- 120 Hz on ProMotion iPhones (iOS held the game at 60 Hz)
+- Settings → "Performance mode": the world renders at 75 % and rises to 100 % while the frame rate holds (on by default)
+- Settings → "Frame generation" (FSR 3.1), off by default
+- Settings → "Heat guard": on a hot phone the render distance drops to 6 or 4 chunks for a while, then comes back
+- Mods: the "In game" tab opens first; "Enable all" and "Disable all" for Rust mods
+- Bigger launcher tabs that respond when switched
 
 ### Fixed
-- Crash when deleting a button in the controls editor
-- Back and keys did nothing on the main menu
+- The app's version in iOS and AltStore is the real one (it said 1.0)
 
 Full list: ios/CHANGELOG.md
 

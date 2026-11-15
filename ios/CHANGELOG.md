@@ -2,7 +2,7 @@
 
 Source for AltStore / SideStore: `https://github.com/neosay-dev/horizon-ios/releases/latest/download/altstore.json`
 
-## Не выпущено
+## 0.2.1 (2026-11-15)
 
 ### Новое
 - 120 Гц на iPhone с ProMotion (раньше iOS держала игру на 60 Гц)
@@ -12,6 +12,9 @@ Source for AltStore / SideStore: `https://github.com/neosay-dev/horizon-ios/rele
 - Настройки → «Защита от перегрева»: на горячем телефоне дальность прорисовки временно 6 или 4 чанка
 - Моды: вкладка «В игре» открывается первой, кнопки «Включить все» и «Выключить все» для Rust-модов
 - Вкладки лаунчера крупнее, с откликом при переключении
+
+### Исправлено
+- Версия приложения в iOS и AltStore теперь настоящая (раньше 1.0)
 
 ## 0.2.0 (2026-11-15)
 
