@@ -50,6 +50,8 @@ targets:
       path: Horizon/Info.plist
       properties:
         CFBundleDisplayName: Horizon
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # The original launcher's typefaces (crates/horizon-theme/fonts, OFL).
         UIAppFonts:
           - Geist-Regular.ttf
