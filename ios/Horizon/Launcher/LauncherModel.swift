@@ -8,6 +8,47 @@ struct LauncherPrefs: Codable {
     var controlScale: Double = 1
     var controlOpacity: Double = 1
     var lastWorld: String = ""
+    /// Performance mode: the world renders at 75 % and rises to 100 % while the frame rate holds.
+    var performanceMode: Bool = true
+    /// FSR 3.1 frame interpolation: every second frame is made from its neighbours.
+    var frameGeneration: Bool = false
+    /// A hot phone gets a shorter render distance until it cools.
+    var thermalGuard: Bool = true
+    /// What `performanceMode` and `frameGeneration` were when horizon-graphics.txt was last written.
+    var appliedGraphics: String = ""
+
+    init() {}
+
+    /// Keys a file from an older launcher lacks keep their defaults.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        renderDistance = try c.decodeIfPresent(Double.self, forKey: .renderDistance) ?? renderDistance
+        sensitivity = try c.decodeIfPresent(Double.self, forKey: .sensitivity) ?? sensitivity
+        controlScale = try c.decodeIfPresent(Double.self, forKey: .controlScale) ?? controlScale
+        controlOpacity = try c.decodeIfPresent(Double.self, forKey: .controlOpacity) ?? controlOpacity
+        lastWorld = try c.decodeIfPresent(String.self, forKey: .lastWorld) ?? lastWorld
+        performanceMode = try c.decodeIfPresent(Bool.self, forKey: .performanceMode) ?? performanceMode
+        frameGeneration = try c.decodeIfPresent(Bool.self, forKey: .frameGeneration) ?? frameGeneration
+        thermalGuard = try c.decodeIfPresent(Bool.self, forKey: .thermalGuard) ?? thermalGuard
+        appliedGraphics = try c.decodeIfPresent(String.self, forKey: .appliedGraphics) ?? appliedGraphics
+    }
+}
+
+/// The game's graphics file, horizon-graphics.txt beside options.txt (`key:value` lines, graphics.rs).
+enum GraphicsFile {
+    static var url: URL { Paths.gameDir.appendingPathComponent("horizon-graphics.txt") }
+
+    /// Sets `values`, keeping every other line as the game wrote it.
+    static func set(_ values: [(String, String)]) {
+        let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        var lines = text.split(whereSeparator: \.isNewline).map(String.init)
+        for (key, value) in values {
+            lines.removeAll { $0.hasPrefix("\(key):") }
+            lines.append("\(key):\(value)")
+        }
+        try? FileManager.default.createDirectory(at: Paths.gameDir, withIntermediateDirectories: true)
+        try? (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
 }
 
 @MainActor
@@ -21,6 +62,25 @@ final class LauncherSettings: ObservableObject {
     var controlScale: Double { get { prefs.controlScale } set { prefs.controlScale = newValue } }
     var controlOpacity: Double { get { prefs.controlOpacity } set { prefs.controlOpacity = newValue } }
     var lastWorld: String { get { prefs.lastWorld } set { prefs.lastWorld = newValue } }
+    var performanceMode: Bool { get { prefs.performanceMode } set { prefs.performanceMode = newValue } }
+    var frameGeneration: Bool { get { prefs.frameGeneration } set { prefs.frameGeneration = newValue } }
+    var thermalGuard: Bool { get { prefs.thermalGuard } set { prefs.thermalGuard = newValue } }
+
+    /// Writes the launcher's graphics switches into horizon-graphics.txt, once per change: what the player
+    /// sets in the game's own Graphics screen afterwards stays until a switch here is flipped again.
+    func applyGraphics() {
+        let wanted = "performance:\(prefs.performanceMode) frames:\(prefs.frameGeneration)"
+        guard wanted != prefs.appliedGraphics else { return }
+        let fps = max(60, UIScreen.main.maximumFramesPerSecond)
+        GraphicsFile.set([
+            ("resolutionScale", prefs.performanceMode ? "75" : "100"),
+            ("dynamicResolution", prefs.performanceMode ? "true" : "false"),
+            ("targetFps", String(fps)),
+            ("frameGeneration", prefs.frameGeneration ? "fsr3.1" : "off"),
+        ])
+        prefs.appliedGraphics = wanted
+        save()
+    }
 
     static func load() -> LauncherSettings {
         let data = try? Data(contentsOf: Paths.settings)
@@ -100,6 +160,7 @@ final class LauncherModel: ObservableObject {
     func play(world: String?) {
         status = nil
         settings.save()
+        settings.applyGraphics()
         controls.save()
         Task {
             do {

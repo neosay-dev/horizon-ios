@@ -69,7 +69,7 @@ Sideloadly or TrollStore.
 On a Mac:
 
 ```sh
-ios/build-rust.sh                       # target/aarch64-apple-ios/release/libhorizon_ios.a
+ios/build-rust.sh                       # target/aarch64-apple-ios/ios/libhorizon_ios.a
 cd ios && xcodegen generate && open Horizon.xcodeproj
 ```
 

@@ -75,12 +75,17 @@ struct LauncherView: View {
             Spacer(minLength: 12)
             HStack(spacing: 2) {
                 ForEach(Page.allCases, id: \.self) { p in
-                    Button { page = p } label: {
+                    Button {
+                        guard page != p else { return }
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        withAnimation(.easeOut(duration: 0.15)) { page = p }
+                    } label: {
                         Text(p.title)
-                            .font(HZ.sans(13, .medium))
+                            .font(HZ.sans(14, .medium))
                             .foregroundStyle(page == p ? HZ.ink : HZ.muted)
-                            .padding(.horizontal, 12).frame(minHeight: 30)
+                            .padding(.horizontal, 16).frame(minHeight: 38)
                             .background(page == p ? HZ.pill : .clear, in: Capsule())
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
@@ -255,7 +260,7 @@ struct ModsPage: View {
     enum Tab: Hashable { case installed, horizon, modrinth }
 
     @ObservedObject var mods: ModsStore
-    @State private var tab: Tab = .horizon
+    @State private var tab: Tab = .installed
     @State private var kind: ModKind = .mod
     @State private var query = ""
 
@@ -264,7 +269,7 @@ struct ModsPage: View {
             PageHead(title: "Моды",
                      subtitle: "Моды, ресурспаки и шейдеры из реестра Horizon и с Modrinth. Только то, что работает на iPhone: моды без кода.")
             HStack(spacing: 10) {
-                Segmented(options: [(Tab.horizon, "Horizon"), (Tab.modrinth, "Modrinth"), (Tab.installed, "Установлено")],
+                Segmented(options: [(Tab.installed, "В игре"), (Tab.horizon, "Horizon"), (Tab.modrinth, "Modrinth")],
                           selection: $tab)
                 Spacer()
             }
@@ -361,6 +366,12 @@ struct ModsPage: View {
             if !mods.builtIn.isEmpty {
                 Eyebrow(text: "Rust-моды в игре", status: "\(mods.builtIn.count)", statusColor: HZ.accentText)
                     .padding(.bottom, 8)
+                HStack(spacing: 16) {
+                    Button("Включить все") { mods.setNative(on: true) }.buttonStyle(HZButton(kind: .text))
+                    Button("Выключить все") { mods.setNative(on: false) }.buttonStyle(HZButton(kind: .text))
+                    Spacer()
+                }
+                .padding(.bottom, 8)
                 Hairline()
                 ForEach(Array(mods.builtIn.enumerated()), id: \.element.id) { i, mod in
                     NumberedRow(number: i + 1, title: mod.id,
@@ -540,15 +551,24 @@ struct SettingsPage: View {
                       value: $settings.controlScale, range: 0.6...1.6)
             sliderRow(5, "Прозрачность кнопок", "\(Int(settings.controlOpacity * 100)) %",
                       value: $settings.controlOpacity, range: 0.2...1)
-            NumberedRow(number: 6, title: "Раскладка управления", detail: "Двигай, меняй размер, добавляй свои кнопки.") {
+            toggleRow(6, "Режим производительности",
+                      "Мир рисуется в 75 % разрешения и поднимается до 100 %, пока хватает кадров.",
+                      isOn: $settings.performanceMode)
+            toggleRow(7, "Генерация кадров",
+                      "FSR 3.1: промежуточные кадры между настоящими. На старых iPhone может замедлить.",
+                      isOn: $settings.frameGeneration)
+            toggleRow(8, "Защита от перегрева",
+                      "Горячий телефон: дальность прорисовки временно 6 или 4 чанка.",
+                      isOn: $settings.thermalGuard)
+            NumberedRow(number: 9, title: "Раскладка управления", detail: "Двигай, меняй размер, добавляй свои кнопки.") {
                 Button("Редактор…") { showControls = true }.buttonStyle(HZButton(kind: .text))
             }
-            NumberedRow(number: 7, title: "Файлы игры",
+            NumberedRow(number: 10, title: "Файлы игры",
                         detail: model.resourcesReady ? "Готовы для Minecraft 26.3" : "Не найдены",
                         detailColor: model.resourcesReady ? HZ.muted : HZ.warn) {
                 Button(model.resourcesReady ? "Заменить…" : "Импорт…") { picking = true }.buttonStyle(HZButton(kind: .text))
             }
-            NumberedRow(number: 8, title: "Папка игры",
+            NumberedRow(number: 11, title: "Папка игры",
                         detail: "Миры, моды и логи: «Файлы» → На iPhone → Horizon.")
             Footer()
         }
@@ -561,6 +581,13 @@ struct SettingsPage: View {
         case .local(let name): return "\(name) · локальный"
         case .signedIn(let name): return "\(name) · Microsoft"
         default: return "Не выполнен вход"
+        }
+    }
+
+    private func toggleRow(_ n: Int, _ title: String, _ detail: String, isOn: Binding<Bool>) -> some View {
+        NumberedRow(number: n, title: title, detail: detail) {
+            HZToggle(isOn: Binding(get: { isOn.wrappedValue },
+                                   set: { isOn.wrappedValue = $0; settings.save() }))
         }
     }
 

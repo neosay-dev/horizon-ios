@@ -50,6 +50,42 @@ final class AppBridge {
         window.rootViewController = controller
         window.isHidden = false
         controlsWindow = window
+        watchHeat()
+    }
+
+    private var heatObserver: NSObjectProtocol?
+
+    /// A hot phone slows its processor by itself, in jumps. Before that, the render distance comes down
+    /// (6 chunks when the phone is hot, 4 when it is about to protect itself) and returns once it cools.
+    private func watchHeat() {
+        guard heatObserver == nil else { return }
+        heatObserver = NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyHeat() }
+        }
+        applyHeat()
+    }
+
+    private var heatLimited = false
+
+    private func applyHeat() {
+        let settings = launcher.settings
+        guard settings.thermalGuard else { return }
+        let chosen = Int(settings.renderDistance)
+        let limit: Int?
+        switch ProcessInfo.processInfo.thermalState {
+        case .serious: limit = 6
+        case .critical: limit = 4
+        default: limit = nil
+        }
+        if let limit, limit < chosen {
+            gameInput("render-distance \(limit)")
+            heatLimited = true
+        } else if heatLimited {
+            gameInput("render-distance \(chosen)")
+            heatLimited = false
+        }
     }
 
     func gameFailed() {

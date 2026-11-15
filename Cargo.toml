@@ -120,3 +120,11 @@ inherits = "release"
 lto = false
 codegen-units = 16
 incremental = true
+
+# The iOS app's build (ios/build-rust.sh, .github/workflows/ios.yml): thin LTO across the crates for the
+# frame rate, with 16 codegen units so horizon-client still builds on every core of the CI's Mac.
+[profile.ios]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+incremental = false

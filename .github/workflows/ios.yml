@@ -40,7 +40,7 @@ jobs:
     env:
       IPHONEOS_DEPLOYMENT_TARGET: "17.0"
       CARGO_TERM_COLOR: always
-      # The `fast` profile (16 codegen units, no LTO): horizon-client builds on every core.
+      # The `ios` profile (thin LTO, 16 codegen units): horizon-client builds on every core.
       CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +86,7 @@ jobs:
         run: |
           features=()
           if [ "${HZ_MODS_FEATURE:-0}" = 1 ]; then features=(--features horizon-client/mods); fi
-          cargo build --profile fast -p horizon-ios --target aarch64-apple-ios "${features[@]}" 2>&1 | tee rust-ios-build.log
+          cargo build --profile ios -p horizon-ios --target aarch64-apple-ios "${features[@]}" 2>&1 | tee rust-ios-build.log
 
       - name: Xcode project
         run: |

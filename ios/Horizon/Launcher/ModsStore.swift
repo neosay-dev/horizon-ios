@@ -132,6 +132,11 @@ final class ModsStore: ObservableObject {
         switches[id] = on
     }
 
+    /// Every built-in (Rust) mod on or off at once.
+    func setNative(on: Bool) {
+        for mod in builtIn { setSwitch(mod.id, on: on) }
+    }
+
     /// The registry id of an installed content mod (`horizon:<id>`), the one its switch uses.
     func contentID(_ mod: InstalledMod) -> String? {
         guard mod.kind == .mod, mod.key.hasPrefix("horizon:") else { return nil }
