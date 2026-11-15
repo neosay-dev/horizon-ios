@@ -33,7 +33,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.neosay.horizon
         PRODUCT_NAME: Horizon
         MARKETING_VERSION: "0.2.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_OBJC_BRIDGING_HEADER: Horizon/Bridge/Horizon-Bridging-Header.h
         HEADER_SEARCH_PATHS: $(SRCROOT)/Horizon/Bridge

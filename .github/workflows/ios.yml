@@ -139,3 +139,7 @@ jobs:
               --notes-file ios/RELEASE_NOTES.md --latest
           cp Horizon-unsigned.ipa "Horizon-${tag#ios-v}.ipa"
           gh release upload "$tag" "Horizon-${tag#ios-v}.ipa" --clobber
+          # AltStore / SideStore source, every ios-v release in it:
+          # https://github.com/<repo>/releases/latest/download/altstore.json
+          python3 ios/altstore_source.py "$GITHUB_REPOSITORY" > altstore.json
+          gh release upload "$tag" altstore.json --clobber
