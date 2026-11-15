@@ -692,6 +692,34 @@ impl Game<'_> {
                 ok()
             }
             "pad" => Ok(Some(self.pad_command(&words)?)),
+            // The iOS keyboard (ios/Horizon/Controls/TouchOverlay.swift, KeyboardInputView): its
+            // text, as an input method commits it, into whatever text box has focus, the title's
+            // screens included (`type` needs a world).
+            "text" => {
+                let text = line
+                    .trim_start()
+                    .strip_prefix("text")
+                    .unwrap_or("")
+                    .strip_prefix(' ')
+                    .unwrap_or("");
+                self.ime_commit(text);
+                ok()
+            }
+            // Its Backspace, Enter and Escape: on the title's screens what the window's keys do
+            // there (`key` needs a world), in a world `key`.
+            "text-key" if self.title_input_active() => {
+                self.title_text_key(arg(1)?, event_loop)?;
+                ok()
+            }
+            "text-key" => {
+                let name = match arg(1)? {
+                    "backspace" => "key.keyboard.backspace",
+                    "enter" => "key.keyboard.enter",
+                    "escape" => "key.keyboard.escape",
+                    other => return Err(format!("unknown text key {other}").into()),
+                };
+                self.control_command_inner(&format!("key {name} tap"), reply, event_loop)
+            }
             "key" => {
                 let key = key_code(arg(1)?).ok_or_else(|| format!("unknown key {}", words[1]))?;
                 let action = arg(2)?;
@@ -1363,6 +1391,46 @@ impl Game<'_> {
                 None => Err(format!("unknown command {other}; try help").into()),
             },
         }
+    }
+
+    /// The iOS keyboard's Backspace, Enter and Escape on the title's screens, as the window's keys
+    /// there (`handle_window_event_inner`, `title_input_active`).
+    fn title_text_key(&mut self, name: &str, event_loop: &dyn EventLoopCtl) -> Result<()> {
+        match name {
+            "backspace" => {
+                if self.title.as_mut().is_some_and(|t| t.has_caret_field()) {
+                    let (ctrl, shift) = (self.has_control_down(), self.has_shift_down());
+                    if let Some(t) = self.title.as_mut() {
+                        t.field_key(KeyCode::Backspace, ctrl, shift);
+                    }
+                } else {
+                    self.title_edit(None, true);
+                }
+            }
+            "enter" => {
+                let (w, h) = self.gui_size();
+                let (action, sound) = self
+                    .title
+                    .as_mut()
+                    .map_or((horizon_client::title::Action::None, false), |t| {
+                        t.confirm_key_size((w, h))
+                    });
+                self.save_title_options();
+                if sound {
+                    self.audio.play_button_click();
+                }
+                self.title_action(event_loop, action)?;
+            }
+            "escape" => {
+                if let Some(t) = self.title.as_mut() {
+                    t.escape();
+                    self.reopen_data_packs(event_loop)?;
+                }
+                self.save_title_options();
+            }
+            other => return Err(format!("unknown text key {other}").into()),
+        }
+        Ok(())
     }
 
     /// `horizon-ctl save` and `save-all`.

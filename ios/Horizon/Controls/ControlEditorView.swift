@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// The layout editor: drag controls into place, select one to resize it, change its opacity,
-/// what it presses and whether a tap toggles it; add custom buttons; reset to the default.
+/// The layout editor, for both layouts (in the world, and over the screens' virtual mouse): drag
+/// controls into place, select one to resize it, change its opacity, what it presses and whether a
+/// tap toggles it; add buttons; delete them; reset a layout to the default.
 struct ControlEditorView: View {
     @EnvironmentObject var layout: ControlLayout
     @EnvironmentObject var settings: LauncherSettings
     var onDone: () -> Void
 
+    @State private var mode: ControlLayout.Mode = .play
     @State private var selected: ControlButton.ID?
     @State private var adding = false
 
@@ -15,18 +17,26 @@ struct ControlEditorView: View {
             ZStack {
                 Color.black.opacity(0.45).ignoresSafeArea()
                     .onTapGesture { selected = nil }
+                if mode == .menu {
+                    Text("Меню, инвентарь, сундуки: кнопки над виртуальной мышью")
+                        .font(.footnote).foregroundStyle(.white.opacity(0.6))
+                        .allowsHitTesting(false)
+                }
 
-                ForEach($layout.buttons) { $button in
-                    EditableControl(button: $button, selected: selected == button.id,
-                                    screen: geo.size, scale: settings.controlScale)
-                        .onTapGesture { selected = button.id }
+                // By id, not by index: a deleted button's view must not read its old place.
+                ForEach(layout.list(mode)) { button in
+                    if let binding = layout.binding(button.id, in: mode) {
+                        EditableControl(button: binding, selected: selected == button.id,
+                                        screen: geo.size, scale: settings.controlScale)
+                            .onTapGesture { selected = button.id }
+                    }
                 }
 
                 VStack {
                     toolbar
                     Spacer()
-                    if let index = layout.buttons.firstIndex(where: { $0.id == selected }) {
-                        inspector(index)
+                    if let id = selected, let binding = layout.binding(id, in: mode) {
+                        inspector(id, binding)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
@@ -34,9 +44,10 @@ struct ControlEditorView: View {
                 .animation(.spring(duration: 0.3), value: selected)
             }
         }
+        .onChange(of: mode) { _, _ in selected = nil }
         .sheet(isPresented: $adding) {
             AddControlSheet { button in
-                layout.buttons.append(button)
+                layout.append(button, to: mode)
                 selected = button.id
             }
             .presentationDetents([.medium, .large])
@@ -46,7 +57,13 @@ struct ControlEditorView: View {
     private var toolbar: some View {
         GlassGroup {
             HStack(spacing: 12) {
-                Button { layout.reset() } label: {
+                Picker("", selection: $mode) {
+                    Text("В игре").tag(ControlLayout.Mode.play)
+                    Text("В меню").tag(ControlLayout.Mode.menu)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+                Button { selected = nil; layout.reset(mode) } label: {
                     Label("Сбросить", systemImage: "arrow.counterclockwise")
                 }
                 .glassButton()
@@ -66,31 +83,35 @@ struct ControlEditorView: View {
         }
     }
 
+    private func delete(_ id: ControlButton.ID) {
+        // The inspector closes first; the button goes on the next turn, when nothing draws it.
+        selected = nil
+        let mode = mode
+        DispatchQueue.main.async { layout.remove(id, from: mode) }
+    }
+
     @ViewBuilder
-    private func inspector(_ i: Int) -> some View {
-        let button = $layout.buttons[i]
+    private func inspector(_ id: ControlButton.ID, _ button: Binding<ControlButton>) -> some View {
+        let value = button.wrappedValue
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 TextField("Название", text: button.label)
                     .font(.headline)
                 Spacer()
-                if layout.buttons[i].action != .joystick && layout.buttons[i].action != .hotbar {
-                    Button(role: .destructive) {
-                        layout.buttons.remove(at: i)
-                        selected = nil
-                    } label: { Image(systemName: "trash") }
-                    .glassButton()
+                if value.action != .joystick && value.action != .hotbar {
+                    Button(role: .destructive) { delete(id) } label: { Image(systemName: "trash") }
+                        .glassButton()
                 }
             }
             HStack {
                 Text("Размер")
-                Slider(value: button.size, in: layout.buttons[i].action == .hotbar ? 180...720 : 32...220)
+                Slider(value: button.size, in: value.action == .hotbar ? 180...720 : 32...220)
             }
             HStack {
                 Text("Прозрачность")
                 Slider(value: button.opacity, in: 0.1...1)
             }
-            switch layout.buttons[i].action {
+            switch value.action {
             case .key, .mouse, .combo:
                 HStack {
                     Text("Высота")
@@ -98,6 +119,11 @@ struct ControlEditorView: View {
                 }
                 Toggle("Нажатие переключает (вкл/выкл)", isOn: button.toggle)
                 ComboEditor(action: button.action)
+            case .wheel, .keyboard, .chat, .editLayout:
+                HStack {
+                    Text("Высота")
+                    Slider(value: button.aspect, in: 0.4...1.6)
+                }
             default:
                 EmptyView()
             }
@@ -274,12 +300,30 @@ private struct AddControlSheet: View {
     @State private var action: ControlAction = .combo(["key.keyboard.f"])
     @State private var toggle = false
 
+    private func special(_ title: String, _ symbol: String, _ action: ControlAction) -> some View {
+        Button {
+            add(ControlButton(label: title, symbol: symbol, action: action, x: 0.5, y: 0.5, size: 60))
+            dismiss()
+        } label: {
+            Label(title, systemImage: symbol)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Название", text: $label)
-                ComboEditor(action: $action)
-                Toggle("Нажатие переключает (вкл/выкл)", isOn: $toggle)
+                Section("Особые") {
+                    special("Клавиатура", "keyboard", .keyboard)
+                    special("Колёсико вверх", "chevron.up", .wheel(1))
+                    special("Колёсико вниз", "chevron.down", .wheel(-1))
+                    special("Чат", "bubble.left", .chat)
+                    special("Редактор раскладки", "slider.horizontal.3", .editLayout)
+                }
+                Section("Своя кнопка") {
+                    TextField("Название", text: $label)
+                    ComboEditor(action: $action)
+                    Toggle("Нажатие переключает (вкл/выкл)", isOn: $toggle)
+                }
             }
             .navigationTitle("Новая кнопка")
             .toolbar {

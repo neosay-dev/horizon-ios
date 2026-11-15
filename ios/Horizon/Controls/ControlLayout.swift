@@ -18,6 +18,10 @@ enum ControlAction: Codable, Hashable {
     case chat
     /// Opens the layout editor over the game.
     case editLayout
+    /// The mouse wheel: lines up (positive) or down.
+    case wheel(Int)
+    /// The system keyboard, typing into whatever the game has focused (a server's name, a sign).
+    case keyboard
 
     /// The parts it presses, as combo items.
     var parts: [String] {
@@ -48,33 +52,75 @@ struct ControlButton: Codable, Identifiable, Hashable {
     var aspect: Double = 1
 }
 
-/// The touch layout, kept in Library/Horizon/controls-v2.json.
+/// The two touch layouts: the world's (Library/Horizon/controls-v2.json) and the screens' over the
+/// virtual mouse (controls-menu.json).
 @MainActor
 final class ControlLayout: ObservableObject {
+    enum Mode: Hashable { case play, menu }
+
     @Published var buttons: [ControlButton] = []
+    @Published var menu: [ControlButton] = []
+
+    private static var menuFile: URL {
+        Paths.controls.deletingLastPathComponent().appendingPathComponent("controls-menu.json")
+    }
 
     init() { load() }
 
     func load() {
-        if let data = try? Data(contentsOf: Paths.controls),
-           let saved = try? JSONDecoder().decode([ControlButton].self, from: data), !saved.isEmpty {
-            buttons = saved
-        } else {
-            buttons = Self.defaults
-        }
+        buttons = Self.read(Paths.controls) ?? Self.defaults
+        menu = Self.read(Self.menuFile) ?? Self.menuDefaults
+    }
+
+    private static func read(_ url: URL) -> [ControlButton]? {
+        guard let data = try? Data(contentsOf: url),
+              let saved = try? JSONDecoder().decode([ControlButton].self, from: data), !saved.isEmpty else { return nil }
+        return saved
     }
 
     func save() {
         try? FileManager.default.createDirectory(at: Paths.controls.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(buttons) {
-            try? data.write(to: Paths.controls, options: .atomic)
+        if let data = try? JSONEncoder().encode(buttons) { try? data.write(to: Paths.controls, options: .atomic) }
+        if let data = try? JSONEncoder().encode(menu) { try? data.write(to: Self.menuFile, options: .atomic) }
+    }
+
+    func reset(_ mode: Mode) {
+        switch mode {
+        case .play: buttons = Self.defaults
+        case .menu: menu = Self.menuDefaults
+        }
+        save()
+    }
+
+    func list(_ mode: Mode) -> [ControlButton] { mode == .play ? buttons : menu }
+
+    func remove(_ id: ControlButton.ID, from mode: Mode) {
+        switch mode {
+        case .play: buttons.removeAll { $0.id == id }
+        case .menu: menu.removeAll { $0.id == id }
         }
     }
 
-    func reset() {
-        buttons = Self.defaults
-        save()
+    func append(_ button: ControlButton, to mode: Mode) {
+        switch mode {
+        case .play: buttons.append(button)
+        case .menu: menu.append(button)
+        }
+    }
+
+    /// A button's binding by its id, safe when it is gone (a deleted button's editor may still draw once).
+    func binding(_ id: ControlButton.ID, in mode: Mode) -> Binding<ControlButton>? {
+        guard let first = list(mode).first(where: { $0.id == id }) else { return nil }
+        return Binding(
+            get: { [weak self] in self?.list(mode).first { $0.id == id } ?? first },
+            set: { [weak self] new in
+                guard let self else { return }
+                switch mode {
+                case .play: if let i = self.buttons.firstIndex(where: { $0.id == id }) { self.buttons[i] = new }
+                case .menu: if let i = self.menu.firstIndex(where: { $0.id == id }) { self.menu[i] = new }
+                }
+            })
     }
 
     private static func key(_ label: String, _ name: String, x: Double, y: Double, size: Double = 54,
@@ -104,6 +150,16 @@ final class ControlLayout: ObservableObject {
         key("Tab", "tab", x: 0.43, y: 0.08, size: 46, aspect: 0.8),
         ControlButton(label: "⚙︎", symbol: nil, action: .editLayout, x: 0.95, y: 0.08, size: 46, aspect: 0.8),
         ControlButton(label: "Хотбар", symbol: nil, action: .hotbar, x: 0.50, y: 0.95, size: 364, opacity: 0.25),
+    ]
+
+    /// Over the screens (menus, inventory): LMB and RMB at the cursor, Back, the wheel, the keyboard.
+    static let menuDefaults: [ControlButton] = [
+        ControlButton(label: "ЛКМ", symbol: "computermouse.fill", action: .mouse("left"), x: 0.93, y: 0.84, size: 62),
+        ControlButton(label: "ПКМ", symbol: "computermouse", action: .mouse("right"), x: 0.93, y: 0.60, size: 62),
+        ControlButton(label: "Назад", symbol: "arrow.uturn.backward", action: .key("esc"), x: 0.07, y: 0.14, size: 62),
+        ControlButton(label: "Вверх", symbol: "chevron.up", action: .wheel(1), x: 0.07, y: 0.60, size: 62),
+        ControlButton(label: "Вниз", symbol: "chevron.down", action: .wheel(-1), x: 0.07, y: 0.84, size: 62),
+        ControlButton(label: "Клавиатура", symbol: "keyboard", action: .keyboard, x: 0.93, y: 0.14, size: 62),
     ]
 }
 

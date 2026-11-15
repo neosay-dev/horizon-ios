@@ -5,7 +5,8 @@ import UIKit
 /// - in the world with no screen open (`hz_playing`): the touch controls; a drag turns the view
 ///   and does nothing else, actions are buttons (LMB breaks and attacks, RMB uses and places);
 /// - on every screen (menus, inventory, chests): the virtual mouse, a cursor moved like a
-///   trackpad, with LMB, RMB, Back and the wheel as buttons. A tap clicks at the cursor.
+///   trackpad, under the menu layout's buttons (LMB, RMB, Back, the wheel, the keyboard: the
+///   editor's "In menu" tab). A tap clicks at the cursor.
 /// No finger reaches the game itself (horizon_client::ios drops winit's touches).
 @MainActor
 final class TouchControlsController: UIViewController {
@@ -14,6 +15,8 @@ final class TouchControlsController: UIViewController {
     private let look = LookView()
     private let mouse = VirtualMouseView()
     private var controls: [UIView] = []
+    private var menuControls: [UIView] = []
+    private let keyboard = KeyboardInputView()
     private var link: CADisplayLink?
     private var playing = false
 
@@ -39,6 +42,8 @@ final class TouchControlsController: UIViewController {
             v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             view.addSubview(v)
         }
+        keyboard.frame = CGRect(x: -10, y: -10, width: 1, height: 1)
+        view.addSubview(keyboard)
         rebuild()
         setPlaying(false)
         link = CADisplayLink(target: self, selector: #selector(tick))
@@ -63,34 +68,56 @@ final class TouchControlsController: UIViewController {
         playing = on
         // Between the world and a screen nothing stays held (a lost release keeps the player walking).
         gameInput("release")
-        for case let b as ControlButtonView in controls { b.reset() }
+        for case let b as ControlButtonView in controls + menuControls { b.reset() }
         (controls.first { $0 is JoystickView } as? JoystickView)?.reset()
         look.reset()
         mouse.reset()
         if !on { mouse.centre() }
+        if on { keyboard.hide() }
         UIView.animate(withDuration: 0.15) { self.applyAlpha() }
         for v in controls + [look] { v.isUserInteractionEnabled = on }
-        mouse.isUserInteractionEnabled = !on
+        for v in menuControls + [mouse] { v.isUserInteractionEnabled = !on }
     }
 
     func rebuild() {
         controls.forEach { $0.removeFromSuperview() }
+        menuControls.forEach { $0.removeFromSuperview() }
         controls = layout.buttons.map { button in
             let v: UIView
             switch button.action {
             case .joystick: v = JoystickView(button: button)
             case .hotbar: v = HotbarView(button: button)
-            default:
-                let b = ControlButtonView(button: button)
-                b.onChat = { [weak self] in self?.chat() }
-                b.onEdit = { [weak self] in self?.editLayout() }
-                v = b
+            default: v = makeButton(button, pointer: false)
             }
             v.isUserInteractionEnabled = playing
             view.insertSubview(v, belowSubview: mouse)
             return v
         }
+        // Over the mouse: a touch on one of these doesn't move the cursor.
+        menuControls = layout.menu.compactMap { button in
+            switch button.action {
+            case .joystick, .hotbar: return nil
+            default:
+                let v = makeButton(button, pointer: true)
+                v.isUserInteractionEnabled = !playing
+                view.insertSubview(v, aboveSubview: mouse)
+                return v
+            }
+        }
         place()
+    }
+
+    private func makeButton(_ button: ControlButton, pointer: Bool) -> ControlButtonView {
+        let b = ControlButtonView(button: button)
+        b.pointer = pointer
+        b.onChat = { [weak self] in self?.chat() }
+        b.onEdit = { [weak self] in self?.editLayout() }
+        b.onKeyboard = { [weak self] in self?.keyboard.toggle() }
+        return b
+    }
+
+    private var menuButtons: [ControlButton] {
+        layout.menu.filter { $0.action != .joystick && $0.action != .hotbar }
     }
 
     private func place() {
@@ -102,7 +129,12 @@ final class TouchControlsController: UIViewController {
             v.bounds = CGRect(x: 0, y: 0, width: w, height: h)
             v.center = CGPoint(x: bounds.width * b.x, y: bounds.height * b.y)
         }
-        mouse.layoutButtons(scale: scale)
+        for (v, b) in zip(menuControls, menuButtons) {
+            let w = b.size * scale
+            v.bounds = CGRect(x: 0, y: 0, width: w, height: w * b.aspect)
+            v.center = CGPoint(x: bounds.width * b.x, y: bounds.height * b.y)
+        }
+        mouse.layoutArea()
         applyAlpha()
     }
 
@@ -112,6 +144,9 @@ final class TouchControlsController: UIViewController {
         mouse.alpha = playing ? 0 : 1
         for (v, b) in zip(controls, layout.buttons) {
             v.alpha = playing ? b.opacity * settings.controlOpacity : 0
+        }
+        for (v, b) in zip(menuControls, menuButtons) {
+            v.alpha = playing ? 0 : b.opacity * settings.controlOpacity
         }
     }
 
@@ -201,7 +236,6 @@ final class VirtualMouseView: UIView {
     private var travelled: CGFloat = 0
     private var started = Date()
     private var scrollFrom: CGFloat?
-    private var buttons: [MouseButtonView] = []
     var speed: CGFloat = 1.4
 
     override init(frame: CGRect) {
@@ -212,16 +246,6 @@ final class VirtualMouseView: UIView {
         cursor.sizeToFit()
         cursor.isUserInteractionEnabled = false
         addSubview(cursor)
-        let specs: [(String, String, MouseButtonView.Kind)] = [
-            ("ЛКМ", "computermouse.fill", .button(0)),
-            ("ПКМ", "computermouse", .button(1)),
-            ("Назад", "arrow.uturn.backward", .key("esc")),
-            ("Вверх", "chevron.up", .wheel(1)),
-            ("Вниз", "chevron.down", .wheel(-1)),
-        ]
-        buttons = specs.map { MouseButtonView(title: $0.0, symbol: $0.1, kind: $0.2) }
-        buttons.forEach(addSubview)
-        bringSubviewToFront(cursor)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -245,27 +269,11 @@ final class VirtualMouseView: UIView {
         }
     }
 
-    func layoutButtons(scale: Double) {
-        let s = 64 * scale
-        let b = bounds
-        let frames: [CGPoint] = [
-            CGPoint(x: b.width - s * 0.9, y: b.height - s * 1.0),   // LMB
-            CGPoint(x: b.width - s * 0.9, y: b.height - s * 2.2),   // RMB
-            CGPoint(x: s * 0.9, y: s * 0.9),                        // Back
-            CGPoint(x: s * 0.9, y: b.height - s * 2.2),             // wheel up
-            CGPoint(x: s * 0.9, y: b.height - s * 1.0),             // wheel down
-        ]
-        for (button, centre) in zip(buttons, frames) {
-            button.bounds = CGRect(x: 0, y: 0, width: s, height: s)
-            button.center = centre
-        }
-        clamp()
-    }
+    func layoutArea() { clamp() }
 
     func reset() {
         finger = nil
         scrollFrom = nil
-        buttons.forEach { $0.release() }
     }
 
     func centre() {
@@ -557,6 +565,12 @@ final class ControlButtonView: UIView {
     let button: ControlButton
     var onChat: (() -> Void)?
     var onEdit: (() -> Void)?
+    var onKeyboard: (() -> Void)?
+    /// Over the virtual mouse: mouse buttons press at its cursor.
+    var pointer = false
+    private static let textKeys = [
+        "key.keyboard.escape": "escape", "key.keyboard.backspace": "backspace", "key.keyboard.enter": "enter",
+    ]
     private var on = false
     private let icon = UIImageView()
     private let label = UILabel()
@@ -615,7 +629,15 @@ final class ControlButtonView: UIView {
     private func send(_ down: Bool) {
         let parts = button.action.parts
         for part in down ? parts : parts.reversed() {
-            gameInput(KeyCatalog.line(part, down: down))
+            if pointer, part.hasPrefix("mouse.") {
+                let index: UInt8 = part == "mouse.right" ? 1 : part == "mouse.middle" ? 2 : 0
+                hz_pointer_button(index, down)
+            } else if pointer, let name = Self.textKeys[part] {
+                // Over the screens Escape, Backspace and Enter work on the title's too (`text-key`).
+                if down { gameInput("text-key \(name)") }
+            } else {
+                gameInput(KeyCatalog.line(part, down: down))
+            }
         }
     }
 
@@ -624,6 +646,8 @@ final class ControlButtonView: UIView {
         switch button.action {
         case .chat: highlight(true); onChat?()
         case .editLayout: highlight(true); onEdit?()
+        case .keyboard: highlight(true); onKeyboard?()
+        case .wheel(let lines): highlight(true); hz_pointer_wheel(Float(lines))
         default:
             if button.toggle {
                 on.toggle()
@@ -638,7 +662,7 @@ final class ControlButtonView: UIView {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         switch button.action {
-        case .chat, .editLayout: highlight(false)
+        case .chat, .editLayout, .keyboard, .wheel: highlight(false)
         default:
             if !button.toggle {
                 highlight(false)
@@ -685,5 +709,51 @@ final class HotbarView: UIView {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         touches.first.map(select)
+    }
+}
+
+// MARK: - Keyboard
+
+/// The system keyboard for the game, as PojavLauncher's: what is typed goes to whatever the game has
+/// focused (a server's name or address, a world's name, a sign, a book), with Backspace and Enter.
+final class KeyboardInputView: UIView, UIKeyInput {
+    override var canBecomeFirstResponder: Bool { true }
+    var hasText: Bool { true }
+
+    var autocorrectionType: UITextAutocorrectionType = .no
+    var autocapitalizationType: UITextAutocapitalizationType = .none
+    var spellCheckingType: UITextSpellCheckingType = .no
+    var smartQuotesType: UITextSmartQuotesType = .no
+    var smartDashesType: UITextSmartDashesType = .no
+    var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
+    var keyboardAppearance: UIKeyboardAppearance = .dark
+    var returnKeyType: UIReturnKeyType = .done
+
+    func toggle() { isFirstResponder ? hide() : show() }
+
+    func show() {
+        // The keyboard needs this window to be the key one.
+        window?.makeKey()
+        becomeFirstResponder()
+    }
+
+    func hide() {
+        guard isFirstResponder else { return }
+        resignFirstResponder()
+        // The game's window takes the keys back.
+        let game = window?.windowScene?.windows.first { !($0 is PassthroughWindow) && !$0.isHidden && $0.windowLevel == .normal }
+        game?.makeKey()
+    }
+
+    func insertText(_ text: String) {
+        if text == "\n" {
+            gameInput("text-key enter")
+            return
+        }
+        gameInput("text \(text)")
+    }
+
+    func deleteBackward() {
+        gameInput("text-key backspace")
     }
 }
